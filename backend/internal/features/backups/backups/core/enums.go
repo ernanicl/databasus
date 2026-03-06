@@ -8,3 +8,10 @@ const (
 	BackupStatusFailed     BackupStatus = "FAILED"
 	BackupStatusCanceled   BackupStatus = "CANCELED"
 )
+
+type PgWalUploadType string
+
+const (
+	PgWalUploadTypeBasebackup PgWalUploadType = "basebackup"
+	PgWalUploadTypeWal        PgWalUploadType = "wal"
+)

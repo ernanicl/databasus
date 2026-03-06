@@ -17,8 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_controllers "databasus-backend/internal/features/backups/backups/controllers"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_dto "databasus-backend/internal/features/backups/backups/dto"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	pgtypes "databasus-backend/internal/features/databases/databases/postgresql"
@@ -1234,7 +1235,7 @@ func createTestRouter() *gin.Engine {
 		workspaces_controllers.GetMembershipController(),
 		databases.GetDatabaseController(),
 		backups_config.GetBackupConfigController(),
-		backups.GetBackupController(),
+		backups_controllers.GetBackupController(),
 		restores.GetRestoreController(),
 	)
 	return router
@@ -1255,7 +1256,7 @@ func waitForBackupCompletion(
 			t.Fatalf("Timeout waiting for backup completion after %v", timeout)
 		}
 
-		var response backups.GetBackupsResponse
+		var response backups_dto.GetBackupsResponse
 		test_utils.MakeGetRequestAndUnmarshal(
 			t,
 			router,
@@ -1431,7 +1432,7 @@ func createBackupViaAPI(
 	databaseID uuid.UUID,
 	token string,
 ) {
-	request := backups.MakeBackupRequest{DatabaseID: databaseID}
+	request := backups_dto.MakeBackupRequest{DatabaseID: databaseID}
 	test_utils.MakePostRequest(
 		t,
 		router,

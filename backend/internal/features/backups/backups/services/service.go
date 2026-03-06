@@ -1,4 +1,4 @@
-package backups
+package backups_services
 
 import (
 	"encoding/base64"
@@ -11,6 +11,7 @@ import (
 	"databasus-backend/internal/features/backups/backups/backuping"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
+	backups_dto "databasus-backend/internal/features/backups/backups/dto"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -108,7 +109,7 @@ func (s *BackupService) GetBackups(
 	user *users_models.User,
 	databaseID uuid.UUID,
 	limit, offset int,
-) (*GetBackupsResponse, error) {
+) (*backups_dto.GetBackupsResponse, error) {
 	database, err := s.databaseService.GetDatabaseByID(databaseID)
 	if err != nil {
 		return nil, err
@@ -143,7 +144,7 @@ func (s *BackupService) GetBackups(
 		return nil, err
 	}
 
-	return &GetBackupsResponse{
+	return &backups_dto.GetBackupsResponse{
 		Backups: backups,
 		Total:   total,
 		Limit:   limit,
@@ -274,7 +275,7 @@ func (s *BackupService) GetBackupFile(
 		database.WorkspaceID,
 	)
 
-	reader, err := s.getBackupReader(backupID)
+	reader, err := s.GetBackupReader(backupID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -282,39 +283,9 @@ func (s *BackupService) GetBackupFile(
 	return reader, backup, database, nil
 }
 
-func (s *BackupService) deleteDbBackups(databaseID uuid.UUID) error {
-	dbBackupsInProgress, err := s.backupRepository.FindByDatabaseIdAndStatus(
-		databaseID,
-		backups_core.BackupStatusInProgress,
-	)
-	if err != nil {
-		return err
-	}
-
-	if len(dbBackupsInProgress) > 0 {
-		return errors.New("backup is in progress, storage cannot be removed")
-	}
-
-	dbBackups, err := s.backupRepository.FindByDatabaseID(
-		databaseID,
-	)
-	if err != nil {
-		return err
-	}
-
-	for _, dbBackup := range dbBackups {
-		err := s.backupCleaner.DeleteBackup(dbBackup)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// GetBackupReader returns a reader for the backup file
-// If encrypted, wraps with DecryptionReader
-func (s *BackupService) getBackupReader(backupID uuid.UUID) (io.ReadCloser, error) {
+// GetBackupReader returns a reader for the backup file.
+// If encrypted, wraps with DecryptionReader.
+func (s *BackupService) GetBackupReader(backupID uuid.UUID) (io.ReadCloser, error) {
 	backup, err := s.backupRepository.FindByID(backupID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find backup: %w", err)
@@ -394,7 +365,7 @@ func (s *BackupService) getBackupReader(backupID uuid.UUID) (io.ReadCloser, erro
 
 	s.logger.Info("Returning encrypted backup with decryption", "backupId", backupID)
 
-	return &DecryptionReaderCloser{
+	return &backups_dto.DecryptionReaderCloser{
 		DecryptionReader: decryptionReader,
 		BaseReader:       fileReader,
 	}, nil
@@ -465,7 +436,7 @@ func (s *BackupService) GetBackupFileWithoutAuth(
 		return nil, nil, nil, err
 	}
 
-	reader, err := s.getBackupReader(backupID)
+	reader, err := s.GetBackupReader(backupID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -499,6 +470,36 @@ func (s *BackupService) IsDownloadInProgress(userID uuid.UUID) bool {
 
 func (s *BackupService) UnregisterDownload(userID uuid.UUID) {
 	s.downloadTokenService.UnregisterDownload(userID)
+}
+
+func (s *BackupService) deleteDbBackups(databaseID uuid.UUID) error {
+	dbBackupsInProgress, err := s.backupRepository.FindByDatabaseIdAndStatus(
+		databaseID,
+		backups_core.BackupStatusInProgress,
+	)
+	if err != nil {
+		return err
+	}
+
+	if len(dbBackupsInProgress) > 0 {
+		return errors.New("backup is in progress, storage cannot be removed")
+	}
+
+	dbBackups, err := s.backupRepository.FindByDatabaseID(
+		databaseID,
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, dbBackup := range dbBackups {
+		err := s.backupCleaner.DeleteBackup(dbBackup)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *BackupService) generateBackupFilename(

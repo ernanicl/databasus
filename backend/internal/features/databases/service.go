@@ -2,9 +2,11 @@ package databases
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"databasus-backend/internal/config"
@@ -87,21 +89,8 @@ func (s *DatabaseService) CreateDatabase(
 		return nil, fmt.Errorf("failed to auto-detect database data: %w", err)
 	}
 
-	if config.GetEnv().IsCloud {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		isReadOnly, permissions, err := database.IsUserReadOnly(ctx, s.logger, s.fieldEncryptor)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify user permissions: %w", err)
-		}
-
-		if !isReadOnly {
-			return nil, fmt.Errorf(
-				"in cloud mode, only read-only database users are allowed (user has permissions: %v)",
-				permissions,
-			)
-		}
+	if err := s.verifyReadOnlyUserIfNeeded(database); err != nil {
+		return nil, err
 	}
 
 	if err := database.EncryptSensitiveFields(s.fieldEncryptor); err != nil {
@@ -171,25 +160,8 @@ func (s *DatabaseService) UpdateDatabase(
 		return fmt.Errorf("failed to auto-detect database data: %w", err)
 	}
 
-	if config.GetEnv().IsCloud {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		isReadOnly, permissions, err := existingDatabase.IsUserReadOnly(
-			ctx,
-			s.logger,
-			s.fieldEncryptor,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to verify user permissions: %w", err)
-		}
-
-		if !isReadOnly {
-			return fmt.Errorf(
-				"in cloud mode, only read-only database users are allowed (user has permissions: %v)",
-				permissions,
-			)
-		}
+	if err := s.verifyReadOnlyUserIfNeeded(existingDatabase); err != nil {
+		return err
 	}
 
 	oldName := existingDatabase.Name
@@ -485,6 +457,7 @@ func (s *DatabaseService) CopyDatabase(
 			newDatabase.Postgresql = &postgresql.PostgresqlDatabase{
 				ID:             uuid.Nil,
 				DatabaseID:     nil,
+				BackupType:     existingDatabase.Postgresql.BackupType,
 				Version:        existingDatabase.Postgresql.Version,
 				Host:           existingDatabase.Postgresql.Host,
 				Port:           existingDatabase.Postgresql.Port,
@@ -636,6 +609,71 @@ func (s *DatabaseService) SetHealthStatus(
 	}
 
 	return nil
+}
+
+func (s *DatabaseService) RegenerateAgentToken(
+	user *users_models.User,
+	databaseID uuid.UUID,
+) (string, error) {
+	database, err := s.dbRepository.FindByID(databaseID)
+	if err != nil {
+		return "", err
+	}
+
+	if database.WorkspaceID == nil {
+		return "", errors.New("cannot regenerate token for database without workspace")
+	}
+
+	canManage, err := s.workspaceService.CanUserManageDBs(*database.WorkspaceID, user)
+	if err != nil {
+		return "", err
+	}
+	if !canManage {
+		return "", errors.New(
+			"insufficient permissions to regenerate agent token for this database",
+		)
+	}
+
+	plainToken := strings.ReplaceAll(uuid.New().String(), "-", "")
+	tokenHash := hashAgentToken(plainToken)
+
+	database.AgentToken = &tokenHash
+	database.IsAgentTokenGenerated = true
+
+	_, err = s.dbRepository.Save(database)
+	if err != nil {
+		return "", err
+	}
+
+	s.auditLogService.WriteAuditLog(
+		fmt.Sprintf("Agent token regenerated for database: %s", database.Name),
+		&user.ID,
+		database.WorkspaceID,
+	)
+
+	return plainToken, nil
+}
+
+func (s *DatabaseService) VerifyAgentToken(token string) error {
+	hash := hashAgentToken(token)
+
+	_, err := s.dbRepository.FindByAgentTokenHash(hash)
+	if err != nil {
+		return errors.New("invalid token")
+	}
+
+	return nil
+}
+
+func (s *DatabaseService) GetDatabaseByAgentToken(token string) (*Database, error) {
+	hash := hashAgentToken(token)
+
+	partial, err := s.dbRepository.FindByAgentTokenHash(hash)
+	if err != nil {
+		return nil, errors.New("invalid agent token")
+	}
+
+	return s.dbRepository.FindByID(partial.ID)
 }
 
 func (s *DatabaseService) OnBeforeWorkspaceDeletion(workspaceID uuid.UUID) error {
@@ -808,4 +846,37 @@ func (s *DatabaseService) CreateReadOnlyUser(
 	}
 
 	return username, password, nil
+}
+
+func (s *DatabaseService) verifyReadOnlyUserIfNeeded(database *Database) error {
+	if !config.GetEnv().IsCloud {
+		return nil
+	}
+
+	if database.Postgresql != nil &&
+		database.Postgresql.BackupType == postgresql.PostgresBackupTypeWalV1 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	isReadOnly, permissions, err := database.IsUserReadOnly(ctx, s.logger, s.fieldEncryptor)
+	if err != nil {
+		return fmt.Errorf("failed to verify user permissions: %w", err)
+	}
+
+	if !isReadOnly {
+		return fmt.Errorf(
+			"in cloud mode, only read-only database users are allowed (user has permissions: %v)",
+			permissions,
+		)
+	}
+
+	return nil
+}
+
+func hashAgentToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", hash)
 }

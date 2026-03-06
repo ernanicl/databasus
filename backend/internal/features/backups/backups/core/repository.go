@@ -245,3 +245,134 @@ func (r *BackupRepository) FindOldestByDatabaseExcludingInProgress(
 
 	return backups, nil
 }
+
+func (r *BackupRepository) FindCompletedFullWalBackupByID(
+	databaseID uuid.UUID,
+	backupID uuid.UUID,
+) (*Backup, error) {
+	var backup Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"database_id = ? AND id = ? AND pg_wal_backup_type = ? AND status = ?",
+			databaseID,
+			backupID,
+			PgWalBackupTypeFullBackup,
+			BackupStatusCompleted,
+		).
+		First(&backup).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &backup, nil
+}
+
+func (r *BackupRepository) FindCompletedWalSegmentsAfter(
+	databaseID uuid.UUID,
+	afterSegmentName string,
+) ([]*Backup, error) {
+	var backups []*Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"database_id = ? AND pg_wal_backup_type = ? AND pg_wal_segment_name >= ? AND status = ?",
+			databaseID,
+			PgWalBackupTypeWalSegment,
+			afterSegmentName,
+			BackupStatusCompleted,
+		).
+		Order("pg_wal_segment_name ASC").
+		Find(&backups).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return backups, nil
+}
+
+func (r *BackupRepository) FindLastCompletedFullWalBackupByDatabaseID(
+	databaseID uuid.UUID,
+) (*Backup, error) {
+	var backup Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"database_id = ? AND pg_wal_backup_type = ? AND status = ?",
+			databaseID,
+			PgWalBackupTypeFullBackup,
+			BackupStatusCompleted,
+		).
+		Order("created_at DESC").
+		First(&backup).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &backup, nil
+}
+
+func (r *BackupRepository) FindWalSegmentByName(
+	databaseID uuid.UUID,
+	segmentName string,
+) (*Backup, error) {
+	var backup Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"database_id = ? AND pg_wal_backup_type = ? AND pg_wal_segment_name = ?",
+			databaseID,
+			PgWalBackupTypeWalSegment,
+			segmentName,
+		).
+		First(&backup).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &backup, nil
+}
+
+func (r *BackupRepository) FindLastWalSegmentAfter(
+	databaseID uuid.UUID,
+	afterSegmentName string,
+) (*Backup, error) {
+	var backup Backup
+
+	err := storage.
+		GetDb().
+		Where(
+			"database_id = ? AND pg_wal_backup_type = ? AND pg_wal_segment_name > ? AND status = ?",
+			databaseID,
+			PgWalBackupTypeWalSegment,
+			afterSegmentName,
+			BackupStatusCompleted,
+		).
+		Order("pg_wal_segment_name DESC").
+		First(&backup).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &backup, nil
+}

@@ -13,10 +13,13 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"databasus-backend/internal/config"
+	"databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/databases/databases/mariadb"
 	"databasus-backend/internal/features/databases/databases/mongodb"
 	"databasus-backend/internal/features/databases/databases/postgresql"
 	users_enums "databasus-backend/internal/features/users/enums"
+	users_middleware "databasus-backend/internal/features/users/middleware"
+	users_services "databasus-backend/internal/features/users/services"
 	users_testing "databasus-backend/internal/features/users/testing"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
@@ -144,6 +147,66 @@ func Test_CreateDatabase_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *testin
 	assert.Contains(t, string(testResp.Body), "insufficient permissions")
 }
 
+func Test_CreateDatabase_WalV1Type_NoConnectionFieldsRequired(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+	request := Database{
+		Name:        "Test WAL Database",
+		WorkspaceID: &workspace.ID,
+		Type:        DatabaseTypePostgres,
+		Postgresql: &postgresql.PostgresqlDatabase{
+			BackupType: postgresql.PostgresBackupTypeWalV1,
+			CpuCount:   1,
+		},
+	}
+
+	var response Database
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/databases/create",
+		"Bearer "+owner.Token,
+		request,
+		http.StatusCreated,
+		&response,
+	)
+	defer RemoveTestDatabase(&response)
+
+	assert.Equal(t, "Test WAL Database", response.Name)
+	assert.NotEqual(t, uuid.Nil, response.ID)
+}
+
+func Test_CreateDatabase_PgDumpType_ConnectionFieldsRequired(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+	request := Database{
+		Name:        "Test PG_DUMP Database",
+		WorkspaceID: &workspace.ID,
+		Type:        DatabaseTypePostgres,
+		Postgresql: &postgresql.PostgresqlDatabase{
+			BackupType: postgresql.PostgresBackupTypePgDump,
+			CpuCount:   1,
+		},
+	}
+
+	testResp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/databases/create",
+		"Bearer "+owner.Token,
+		request,
+		http.StatusBadRequest,
+	)
+
+	assert.Contains(t, string(testResp.Body), "host is required")
+}
+
 func Test_UpdateDatabase_PermissionsEnforced(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -254,6 +317,52 @@ func Test_UpdateDatabase_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *testin
 	)
 
 	assert.Contains(t, string(testResp.Body), "insufficient permissions")
+}
+
+func Test_UpdateDatabase_WhenDatabaseTypeChanged_ReturnsBadRequest(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+	defer RemoveTestDatabase(database)
+
+	database.Type = DatabaseTypeMysql
+
+	testResp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/databases/update",
+		"Bearer "+owner.Token,
+		database,
+		http.StatusBadRequest,
+	)
+
+	assert.Contains(t, string(testResp.Body), "database type cannot be changed")
+}
+
+func Test_UpdateDatabase_WhenBackupTypeChanged_ReturnsBadRequest(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+	defer RemoveTestDatabase(database)
+
+	database.Postgresql.BackupType = postgresql.PostgresBackupTypeWalV1
+
+	testResp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/databases/update",
+		"Bearer "+owner.Token,
+		database,
+		http.StatusBadRequest,
+	)
+
+	assert.Contains(t, string(testResp.Body), "backup type cannot be changed")
 }
 
 func Test_DeleteDatabase_PermissionsEnforced(t *testing.T) {
@@ -1050,6 +1159,87 @@ func Test_TestConnection_PermissionsEnforced(t *testing.T) {
 	}
 }
 
+func Test_RegenerateAgentToken_ReturnsToken(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+	defer RemoveTestDatabase(database)
+
+	var response map[string]string
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/databases/"+database.ID.String()+"/regenerate-token",
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&response,
+	)
+
+	assert.NotEmpty(t, response["token"])
+	assert.Len(t, response["token"], 32)
+
+	var updatedDatabase Database
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/databases/"+database.ID.String(),
+		"Bearer "+owner.Token,
+		http.StatusOK,
+		&updatedDatabase,
+	)
+	assert.True(t, updatedDatabase.IsAgentTokenGenerated)
+}
+
+func Test_VerifyAgentToken_WithValidToken_Succeeds(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+	defer RemoveTestDatabase(database)
+
+	var regenerateResponse map[string]string
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/databases/"+database.ID.String()+"/regenerate-token",
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&regenerateResponse,
+	)
+
+	token := regenerateResponse["token"]
+	assert.NotEmpty(t, token)
+
+	w := workspaces_testing.MakeAPIRequest(
+		router,
+		"POST",
+		"/api/v1/databases/verify-token",
+		"",
+		VerifyAgentTokenRequest{Token: token},
+	)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func Test_VerifyAgentToken_WithInvalidToken_Returns401(t *testing.T) {
+	router := createTestRouter()
+
+	w := workspaces_testing.MakeAPIRequest(
+		router,
+		"POST",
+		"/api/v1/databases/verify-token",
+		"",
+		VerifyAgentTokenRequest{Token: "invalidtoken00000000000000000000"},
+	)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 func createTestDatabaseViaAPI(
 	name string,
 	workspaceID uuid.UUID,
@@ -1101,11 +1291,20 @@ func createTestDatabaseViaAPI(
 }
 
 func createTestRouter() *gin.Engine {
-	router := workspaces_testing.CreateTestRouter(
-		workspaces_controllers.GetWorkspaceController(),
-		workspaces_controllers.GetMembershipController(),
-		GetDatabaseController(),
-	)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	v1 := router.Group("/api/v1")
+	protected := v1.Group("").Use(users_middleware.AuthMiddleware(users_services.GetUserService()))
+
+	workspaces_controllers.GetWorkspaceController().RegisterRoutes(protected.(*gin.RouterGroup))
+	workspaces_controllers.GetMembershipController().RegisterRoutes(protected.(*gin.RouterGroup))
+	GetDatabaseController().RegisterRoutes(protected.(*gin.RouterGroup))
+
+	GetDatabaseController().RegisterPublicRoutes(v1)
+
+	audit_logs.SetupDependencies()
+
 	return router
 }
 
@@ -1118,13 +1317,14 @@ func getTestPostgresConfig() *postgresql.PostgresqlDatabase {
 
 	testDbName := "testdb"
 	return &postgresql.PostgresqlDatabase{
-		Version:  tools.PostgresqlVersion16,
-		Host:     config.GetEnv().TestLocalhost,
-		Port:     port,
-		Username: "testuser",
-		Password: "testpassword",
-		Database: &testDbName,
-		CpuCount: 1,
+		BackupType: postgresql.PostgresBackupTypePgDump,
+		Version:    tools.PostgresqlVersion16,
+		Host:       config.GetEnv().TestLocalhost,
+		Port:       port,
+		Username:   "testuser",
+		Password:   "testpassword",
+		Database:   &testDbName,
+		CpuCount:   1,
 	}
 }
 

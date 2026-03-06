@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"databasus-backend/internal/features/backups/backups"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	restores_core "databasus-backend/internal/features/restores/core"
@@ -39,37 +39,37 @@ var restoreDatabaseCache = cache_utils.NewCacheUtil[RestoreDatabaseCache](
 var restoreCancelManager = tasks_cancellation.GetTaskCancelManager()
 
 var restorerNode = &RestorerNode{
-	nodeID:               uuid.New(),
-	databaseService:      databases.GetDatabaseService(),
-	backupService:        backups.GetBackupService(),
-	fieldEncryptor:       encryption.GetFieldEncryptor(),
-	restoreRepository:    restoreRepository,
-	backupConfigService:  backups_config.GetBackupConfigService(),
-	storageService:       storages.GetStorageService(),
-	restoreNodesRegistry: restoreNodesRegistry,
-	logger:               logger.GetLogger(),
-	restoreBackupUsecase: usecases.GetRestoreBackupUsecase(),
-	cacheUtil:            restoreDatabaseCache,
-	restoreCancelManager: restoreCancelManager,
-	lastHeartbeat:        time.Time{},
-	runOnce:              sync.Once{},
-	hasRun:               atomic.Bool{},
+	uuid.New(),
+	databases.GetDatabaseService(),
+	backups_services.GetBackupService(),
+	encryption.GetFieldEncryptor(),
+	restoreRepository,
+	backups_config.GetBackupConfigService(),
+	storages.GetStorageService(),
+	restoreNodesRegistry,
+	logger.GetLogger(),
+	usecases.GetRestoreBackupUsecase(),
+	restoreDatabaseCache,
+	restoreCancelManager,
+	time.Time{},
+	sync.Once{},
+	atomic.Bool{},
 }
 
 var restoresScheduler = &RestoresScheduler{
-	restoreRepository:        restoreRepository,
-	backupService:            backups.GetBackupService(),
-	storageService:           storages.GetStorageService(),
-	backupConfigService:      backups_config.GetBackupConfigService(),
-	restoreNodesRegistry:     restoreNodesRegistry,
-	lastCheckTime:            time.Now().UTC(),
-	logger:                   logger.GetLogger(),
-	restoreToNodeRelations:   make(map[uuid.UUID]RestoreToNodeRelation),
-	restorerNode:             restorerNode,
-	cacheUtil:                restoreDatabaseCache,
-	completionSubscriptionID: uuid.Nil,
-	runOnce:                  sync.Once{},
-	hasRun:                   atomic.Bool{},
+	restoreRepository,
+	backups_services.GetBackupService(),
+	storages.GetStorageService(),
+	backups_config.GetBackupConfigService(),
+	restoreNodesRegistry,
+	time.Now().UTC(),
+	logger.GetLogger(),
+	make(map[uuid.UUID]RestoreToNodeRelation),
+	restorerNode,
+	restoreDatabaseCache,
+	uuid.Nil,
+	sync.Once{},
+	atomic.Bool{},
 }
 
 func GetRestoresScheduler() *RestoresScheduler {

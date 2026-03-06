@@ -70,6 +70,10 @@ func (uc *RestoreMysqlBackupUsecase) Execute(
 		"--verbose",
 	}
 
+	if !config.GetEnv().IsCloud {
+		args = append(args, "--max-allowed-packet=1G")
+	}
+
 	if my.IsHttps {
 		args = append(args, "--ssl-mode=REQUIRED")
 	}

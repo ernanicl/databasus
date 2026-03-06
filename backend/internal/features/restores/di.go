@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups"
 	"databasus-backend/internal/features/backups/backups/backuping"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
@@ -21,7 +21,7 @@ import (
 
 var restoreRepository = &restores_core.RestoreRepository{}
 var restoreService = &RestoreService{
-	backups.GetBackupService(),
+	backups_services.GetBackupService(),
 	restoreRepository,
 	storages.GetStorageService(),
 	backups_config.GetBackupConfigService(),
@@ -51,7 +51,7 @@ func SetupDependencies() {
 	wasAlreadySetup := isSetup.Load()
 
 	setupOnce.Do(func() {
-		backups.GetBackupService().AddBackupRemoveListener(restoreService)
+		backups_services.GetBackupService().AddBackupRemoveListener(restoreService)
 		backuping.GetBackupCleaner().AddBackupRemoveListener(restoreService)
 
 		isSetup.Store(true)

@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	restores_core "databasus-backend/internal/features/restores/core"
@@ -32,7 +32,7 @@ type RestorerNode struct {
 	nodeID uuid.UUID
 
 	databaseService      *databases.DatabaseService
-	backupService        *backups.BackupService
+	backupService        *backups_services.BackupService
 	fieldEncryptor       util_encryption.FieldEncryptor
 	restoreRepository    *restores_core.RestoreRepository
 	backupConfigService  *backups_config.BackupConfigService

@@ -47,14 +47,15 @@ func (l *LocalStorage) SaveFile(
 
 	logger.Info("Starting to save file to local storage", "fileName", fileName)
 
+	tempFilePath := filepath.Join(config.GetEnv().TempFolder, fileName)
+
 	err := files_utils.EnsureDirectories([]string{
 		config.GetEnv().TempFolder,
+		filepath.Dir(tempFilePath),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to ensure directories: %w", err)
 	}
-
-	tempFilePath := filepath.Join(config.GetEnv().TempFolder, fileName)
 	logger.Debug("Creating temp file", "fileName", fileName, "tempPath", tempFilePath)
 
 	tempFile, err := os.Create(tempFilePath)
@@ -100,6 +101,10 @@ func (l *LocalStorage) SaveFile(
 		"finalPath",
 		finalPath,
 	)
+
+	if err = files_utils.EnsureDirectories([]string{filepath.Dir(finalPath)}); err != nil {
+		return fmt.Errorf("failed to ensure final directory: %w", err)
+	}
 
 	// Move the file from temp to backups directory
 	if err = os.Rename(tempFilePath, finalPath); err != nil {

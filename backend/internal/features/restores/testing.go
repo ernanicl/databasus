@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"databasus-backend/internal/features/backups/backups"
+	backups_controllers "databasus-backend/internal/features/backups/backups/controllers"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/restores/restoring"
@@ -22,12 +22,12 @@ func CreateTestRouter() *gin.Engine {
 		workspaces_controllers.GetMembershipController(),
 		databases.GetDatabaseController(),
 		backups_config.GetBackupConfigController(),
-		backups.GetBackupController(),
+		backups_controllers.GetBackupController(),
 		GetRestoreController(),
 	)
 
 	v1 := router.Group("/api/v1")
-	backups.GetBackupController().RegisterPublicRoutes(v1)
+	backups_controllers.GetBackupController().RegisterPublicRoutes(v1)
 
 	return router
 }

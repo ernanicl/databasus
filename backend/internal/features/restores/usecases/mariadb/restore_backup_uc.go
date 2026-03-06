@@ -70,6 +70,10 @@ func (uc *RestoreMariadbBackupUsecase) Execute(
 		"--verbose",
 	}
 
+	if !config.GetEnv().IsCloud {
+		args = append(args, "--max-allowed-packet=1G")
+	}
+
 	if mdb.IsHttps {
 		args = append(args, "--ssl")
 		args = append(args, "--skip-ssl-verify-server-cert")

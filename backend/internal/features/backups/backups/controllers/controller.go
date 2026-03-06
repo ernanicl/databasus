@@ -1,9 +1,11 @@
-package backups
+package backups_controllers
 
 import (
 	"context"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
+	backups_dto "databasus-backend/internal/features/backups/backups/dto"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	"databasus-backend/internal/features/databases"
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	files_utils "databasus-backend/internal/util/files"
@@ -17,7 +19,7 @@ import (
 )
 
 type BackupController struct {
-	backupService *BackupService
+	backupService *backups_services.BackupService
 }
 
 func (c *BackupController) RegisterRoutes(router *gin.RouterGroup) {
@@ -42,7 +44,7 @@ func (c *BackupController) RegisterPublicRoutes(router *gin.RouterGroup) {
 // @Param database_id query string true "Database ID"
 // @Param limit query int false "Number of items per page" default(10)
 // @Param offset query int false "Offset for pagination" default(0)
-// @Success 200 {object} GetBackupsResponse
+// @Success 200 {object} backups_dto.GetBackupsResponse
 // @Failure 400
 // @Failure 401
 // @Failure 500
@@ -54,7 +56,7 @@ func (c *BackupController) GetBackups(ctx *gin.Context) {
 		return
 	}
 
-	var request GetBackupsRequest
+	var request backups_dto.GetBackupsRequest
 	if err := ctx.ShouldBindQuery(&request); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -81,7 +83,7 @@ func (c *BackupController) GetBackups(ctx *gin.Context) {
 // @Tags backups
 // @Accept json
 // @Produce json
-// @Param request body MakeBackupRequest true "Backup creation data"
+// @Param request body backups_dto.MakeBackupRequest true "Backup creation data"
 // @Success 200 {object} map[string]string
 // @Failure 400
 // @Failure 401
@@ -94,7 +96,7 @@ func (c *BackupController) MakeBackup(ctx *gin.Context) {
 		return
 	}
 
-	var request MakeBackupRequest
+	var request backups_dto.MakeBackupRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -308,10 +310,6 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 	}
 
 	c.backupService.WriteAuditLogForDownload(downloadToken.UserID, backup, database)
-}
-
-type MakeBackupRequest struct {
-	DatabaseID uuid.UUID `json:"database_id" binding:"required"`
 }
 
 func (c *BackupController) generateBackupFilename(

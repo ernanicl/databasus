@@ -9,3 +9,7 @@ type IsReadOnlyResponse struct {
 	IsReadOnly bool     `json:"isReadOnly"`
 	Privileges []string `json:"privileges"`
 }
+
+type VerifyAgentTokenRequest struct {
+	Token string `json:"token" binding:"required"`
+}

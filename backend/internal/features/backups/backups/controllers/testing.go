@@ -1,4 +1,4 @@
-package backups
+package backups_controllers
 
 import (
 	"testing"
@@ -41,7 +41,7 @@ func WaitForBackupCompletion(
 	deadline := time.Now().UTC().Add(timeout)
 
 	for time.Now().UTC().Before(deadline) {
-		backups, err := backupRepository.FindByDatabaseID(databaseID)
+		backups, err := backups_core.GetBackupRepository().FindByDatabaseID(databaseID)
 		if err != nil {
 			t.Logf("WaitForBackupCompletion: error finding backups: %v", err)
 			time.Sleep(50 * time.Millisecond)

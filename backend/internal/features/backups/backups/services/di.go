@@ -1,9 +1,6 @@
-package backups
+package backups_services
 
 import (
-	"sync"
-	"sync/atomic"
-
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
@@ -18,16 +15,16 @@ import (
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/logger"
+	"sync"
+	"sync/atomic"
 )
-
-var backupRepository = &backups_core.BackupRepository{}
 
 var taskCancelManager = task_cancellation.GetTaskCancelManager()
 
 var backupService = &BackupService{
 	databases.GetDatabaseService(),
 	storages.GetStorageService(),
-	backupRepository,
+	backups_core.GetBackupRepository(),
 	notifiers.GetNotifierService(),
 	notifiers.GetNotifierService(),
 	backups_config.GetBackupConfigService(),
@@ -44,16 +41,21 @@ var backupService = &BackupService{
 	backuping.GetBackupCleaner(),
 }
 
-var backupController = &BackupController{
-	backupService: backupService,
-}
-
 func GetBackupService() *BackupService {
 	return backupService
 }
 
-func GetBackupController() *BackupController {
-	return backupController
+var walService = &PostgreWalBackupService{
+	backups_config.GetBackupConfigService(),
+	backups_core.GetBackupRepository(),
+	encryption.GetFieldEncryptor(),
+	encryption_secrets.GetSecretKeyService(),
+	logger.GetLogger(),
+	backupService,
+}
+
+func GetWalService() *PostgreWalBackupService {
+	return walService
 }
 
 var (

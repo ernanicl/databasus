@@ -3,8 +3,8 @@ package restores
 import (
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
@@ -26,7 +26,7 @@ import (
 )
 
 type RestoreService struct {
-	backupService        *backups.BackupService
+	backupService        *backups_services.BackupService
 	restoreRepository    *restores_core.RestoreRepository
 	storageService       *storages.StorageService
 	backupConfigService  *backups_config.BackupConfigService

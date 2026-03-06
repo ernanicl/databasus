@@ -2,7 +2,6 @@ package usecases_mysql
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -120,6 +119,10 @@ func (uc *CreateMysqlBackupUsecase) buildMysqldumpArgs(my *mysqltypes.MysqlDatab
 	}
 
 	args = append(args, uc.getNetworkCompressionArgs(my.Version)...)
+
+	if !config.GetEnv().IsCloud {
+		args = append(args, "--max-allowed-packet=1G")
+	}
 
 	if my.IsHttps {
 		args = append(args, "--ssl-mode=REQUIRED")
@@ -448,40 +451,22 @@ func (uc *CreateMysqlBackupUsecase) setupBackupEncryption(
 		return storageWriter, nil, metadata, nil
 	}
 
-	salt, err := backup_encryption.GenerateSalt()
-	if err != nil {
-		return nil, nil, metadata, fmt.Errorf("failed to generate salt: %w", err)
-	}
-
-	nonce, err := backup_encryption.GenerateNonce()
-	if err != nil {
-		return nil, nil, metadata, fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
 	masterKey, err := uc.secretKeyService.GetSecretKey()
 	if err != nil {
 		return nil, nil, metadata, fmt.Errorf("failed to get master key: %w", err)
 	}
 
-	encWriter, err := backup_encryption.NewEncryptionWriter(
-		storageWriter,
-		masterKey,
-		backupID,
-		salt,
-		nonce,
-	)
+	encSetup, err := backup_encryption.SetupEncryptionWriter(storageWriter, masterKey, backupID)
 	if err != nil {
-		return nil, nil, metadata, fmt.Errorf("failed to create encrypting writer: %w", err)
+		return nil, nil, metadata, err
 	}
 
-	saltBase64 := base64.StdEncoding.EncodeToString(salt)
-	nonceBase64 := base64.StdEncoding.EncodeToString(nonce)
-	metadata.EncryptionSalt = &saltBase64
-	metadata.EncryptionIV = &nonceBase64
+	metadata.EncryptionSalt = &encSetup.SaltBase64
+	metadata.EncryptionIV = &encSetup.NonceBase64
 	metadata.Encryption = backups_config.BackupEncryptionEncrypted
 
 	uc.logger.Info("Encryption enabled for backup", "backupId", backupID)
-	return encWriter, encWriter, metadata, nil
+	return encSetup.Writer, encSetup.Writer, metadata, nil
 }
 
 func (uc *CreateMysqlBackupUsecase) cleanupOnCancellation(

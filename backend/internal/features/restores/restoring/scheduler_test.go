@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_controllers "databasus-backend/internal/features/backups/backups/controllers"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -68,7 +68,7 @@ func Test_CheckDeadNodesAndFailRestores_NodeDies_FailsRestoreAndCleansUpRegistry
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	var err error
 	// Register mock node without subscribing to restores (simulates node crash after registration)
@@ -171,7 +171,7 @@ func Test_OnRestoreCompleted_TaskIsNotRestore_SkipsProcessing(t *testing.T) {
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Register mock node
 	mockNodeID = uuid.New()
@@ -357,7 +357,7 @@ func Test_FailRestoresInProgress_SchedulerStarts_UpdatesStatus(t *testing.T) {
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Create two in-progress restores that should be failed on scheduler restart
 	restore1 := &restores_core.Restore{
@@ -465,7 +465,7 @@ func Test_StartRestore_RestoreCompletes_DecrementsActiveTaskCount(t *testing.T) 
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Get initial active task count
 	stats, err := restoreNodesRegistry.GetRestoreNodesStats()
@@ -566,7 +566,7 @@ func Test_StartRestore_RestoreFails_DecrementsActiveTaskCount(t *testing.T) {
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Get initial active task count
 	stats, err := restoreNodesRegistry.GetRestoreNodesStats()
@@ -664,7 +664,7 @@ func Test_StartRestore_CredentialsStoredEncryptedInCache(t *testing.T) {
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Register mock node so scheduler can assign restore to it
 	mockNodeID = uuid.New()
@@ -779,7 +779,7 @@ func Test_StartRestore_CredentialsRemovedAfterRestoreStarts(t *testing.T) {
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
 
 	// Create a test backup
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Create restore with credentials
 	plaintextPassword := "test_password_456"

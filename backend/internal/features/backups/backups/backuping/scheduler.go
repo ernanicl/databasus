@@ -15,7 +15,6 @@ import (
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
-	files_utils "databasus-backend/internal/util/files"
 )
 
 const (
@@ -171,19 +170,15 @@ func (s *BackupsScheduler) StartBackup(database *databases.Database, isCallNotif
 	timestamp := time.Now().UTC()
 
 	backup := &backups_core.Backup{
-		ID: backupID,
-		FileName: fmt.Sprintf(
-			"%s-%s-%s",
-			files_utils.SanitizeFilename(database.Name),
-			timestamp.Format("20060102-150405"),
-			backupID.String(),
-		),
+		ID:           backupID,
 		DatabaseID:   backupConfig.DatabaseID,
 		StorageID:    *backupConfig.StorageID,
 		Status:       backups_core.BackupStatusInProgress,
 		BackupSizeMb: 0,
 		CreatedAt:    timestamp,
 	}
+
+	backup.GenerateFilename(database.Name)
 
 	if err := s.backupRepository.Save(backup); err != nil {
 		s.logger.Error(

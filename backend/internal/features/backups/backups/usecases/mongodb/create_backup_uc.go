@@ -2,7 +2,6 @@ package usecases_mongodb
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -277,41 +276,21 @@ func (uc *CreateMongodbBackupUsecase) setupBackupEncryption(
 		return storageWriter, nil, backupMetadata, nil
 	}
 
-	salt, err := backup_encryption.GenerateSalt()
-	if err != nil {
-		return nil, nil, backupMetadata, fmt.Errorf("failed to generate salt: %w", err)
-	}
-
-	nonce, err := backup_encryption.GenerateNonce()
-	if err != nil {
-		return nil, nil, backupMetadata, fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
 	masterKey, err := uc.secretKeyService.GetSecretKey()
 	if err != nil {
 		return nil, nil, backupMetadata, fmt.Errorf("failed to get master key: %w", err)
 	}
 
-	encryptionWriter, err := backup_encryption.NewEncryptionWriter(
-		storageWriter,
-		masterKey,
-		backupID,
-		salt,
-		nonce,
-	)
+	encSetup, err := backup_encryption.SetupEncryptionWriter(storageWriter, masterKey, backupID)
 	if err != nil {
-		return nil, nil, backupMetadata, fmt.Errorf("failed to create encryption writer: %w", err)
+		return nil, nil, backupMetadata, err
 	}
 
-	saltBase64 := base64.StdEncoding.EncodeToString(salt)
-	nonceBase64 := base64.StdEncoding.EncodeToString(nonce)
-
-	backupMetadata.BackupID = backupID
 	backupMetadata.Encryption = backups_config.BackupEncryptionEncrypted
-	backupMetadata.EncryptionSalt = &saltBase64
-	backupMetadata.EncryptionIV = &nonceBase64
+	backupMetadata.EncryptionSalt = &encSetup.SaltBase64
+	backupMetadata.EncryptionIV = &encSetup.NonceBase64
 
-	return encryptionWriter, encryptionWriter, backupMetadata, nil
+	return encSetup.Writer, encSetup.Writer, backupMetadata, nil
 }
 
 func (uc *CreateMongodbBackupUsecase) copyWithShutdownCheck(

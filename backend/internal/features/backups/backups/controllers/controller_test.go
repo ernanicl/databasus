@@ -1,4 +1,4 @@
-package backups
+package backups_controllers
 
 import (
 	"context"
@@ -24,11 +24,14 @@ import (
 	backups_common "databasus-backend/internal/features/backups/backups/common"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
+	backups_dto "databasus-backend/internal/features/backups/backups/dto"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/postgresql"
 	"databasus-backend/internal/features/storages"
 	local_storage "databasus-backend/internal/features/storages/models/local"
+	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	users_dto "databasus-backend/internal/features/users/dto"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_services "databasus-backend/internal/features/users/services"
@@ -119,7 +122,7 @@ func Test_GetBackups_PermissionsEnforced(t *testing.T) {
 			)
 
 			if tt.expectSuccess {
-				var response GetBackupsResponse
+				var response backups_dto.GetBackupsResponse
 				err := json.Unmarshal(testResp.Body, &response)
 				assert.NoError(t, err)
 				assert.GreaterOrEqual(t, len(response.Backups), 1)
@@ -214,7 +217,7 @@ func Test_CreateBackup_PermissionsEnforced(t *testing.T) {
 				testUserToken = nonMember.Token
 			}
 
-			request := MakeBackupRequest{DatabaseID: database.ID}
+			request := backups_dto.MakeBackupRequest{DatabaseID: database.ID}
 			testResp := test_utils.MakePostRequest(
 				t,
 				router,
@@ -245,7 +248,7 @@ func Test_CreateBackup_AuditLogWritten(t *testing.T) {
 	database := createTestDatabase("Test Database", workspace.ID, owner.Token, router)
 	enableBackupForDatabase(database.ID)
 
-	request := MakeBackupRequest{DatabaseID: database.ID}
+	request := backups_dto.MakeBackupRequest{DatabaseID: database.ID}
 	test_utils.MakePostRequest(
 		t,
 		router,
@@ -373,7 +376,7 @@ func Test_DeleteBackup_PermissionsEnforced(t *testing.T) {
 				ownerUser, err := userService.GetUserFromToken(owner.Token)
 				assert.NoError(t, err)
 
-				response, err := GetBackupService().GetBackups(ownerUser, database.ID, 10, 0)
+				response, err := backups_services.GetBackupService().GetBackups(ownerUser, database.ID, 10, 0)
 				assert.NoError(t, err)
 				assert.Equal(t, 0, len(response.Backups))
 			}
@@ -999,7 +1002,7 @@ func Test_CancelBackup_InProgressBackup_SuccessfullyCancelled(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Register a cancellable context for the backup
-	GetBackupService().taskCancelManager.RegisterTask(backup.ID, func() {})
+	task_cancellation.GetTaskCancelManager().RegisterTask(backup.ID, func() {})
 
 	resp := test_utils.MakePostRequest(
 		t,
@@ -1091,7 +1094,7 @@ func Test_ConcurrentDownloadPrevention(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	service := GetBackupService()
+	service := backups_services.GetBackupService()
 	if !service.IsDownloadInProgress(owner.UserID) {
 		t.Log("Warning: First download completed before we could test concurrency")
 		<-downloadComplete
@@ -1192,7 +1195,7 @@ func Test_GenerateDownloadToken_BlockedWhenDownloadInProgress(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	service := GetBackupService()
+	service := backups_services.GetBackupService()
 	if !service.IsDownloadInProgress(owner.UserID) {
 		t.Log("Warning: First download completed before we could test token generation blocking")
 		<-downloadComplete
@@ -1268,7 +1271,7 @@ func Test_MakeBackup_VerifyBackupAndMetadataFilesExistInStorage(t *testing.T) {
 	initialBackups, err := backupRepo.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 
-	request := MakeBackupRequest{DatabaseID: database.ID}
+	request := backups_dto.MakeBackupRequest{DatabaseID: database.ID}
 	test_utils.MakePostRequest(
 		t,
 		router,
@@ -1502,7 +1505,7 @@ func createTestBackup(
 }
 
 func createExpiredDownloadToken(backupID, userID uuid.UUID) string {
-	tokenService := GetBackupService().downloadTokenService
+	tokenService := backups_download.GetDownloadTokenService()
 	token, err := tokenService.Generate(backupID, userID)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to generate download token: %v", err))
@@ -1843,7 +1846,7 @@ func Test_DeleteBackup_RemovesBackupAndMetadataFilesFromDisk(t *testing.T) {
 	initialBackups, err := backupRepo.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 
-	request := MakeBackupRequest{DatabaseID: database.ID}
+	request := backups_dto.MakeBackupRequest{DatabaseID: database.ID}
 	test_utils.MakePostRequest(
 		t,
 		router,

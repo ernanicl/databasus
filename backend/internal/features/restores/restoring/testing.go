@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/postgresql"
@@ -40,48 +40,48 @@ func CreateTestRouter() *gin.Engine {
 
 func CreateTestRestorerNode() *RestorerNode {
 	return &RestorerNode{
-		nodeID:               uuid.New(),
-		databaseService:      databases.GetDatabaseService(),
-		backupService:        backups.GetBackupService(),
-		fieldEncryptor:       encryption.GetFieldEncryptor(),
-		restoreRepository:    restoreRepository,
-		backupConfigService:  backups_config.GetBackupConfigService(),
-		storageService:       storages.GetStorageService(),
-		restoreNodesRegistry: restoreNodesRegistry,
-		logger:               logger.GetLogger(),
-		restoreBackupUsecase: usecases.GetRestoreBackupUsecase(),
-		cacheUtil:            restoreDatabaseCache,
-		restoreCancelManager: tasks_cancellation.GetTaskCancelManager(),
-		lastHeartbeat:        time.Time{},
-		runOnce:              sync.Once{},
-		hasRun:               atomic.Bool{},
+		uuid.New(),
+		databases.GetDatabaseService(),
+		backups_services.GetBackupService(),
+		encryption.GetFieldEncryptor(),
+		restoreRepository,
+		backups_config.GetBackupConfigService(),
+		storages.GetStorageService(),
+		restoreNodesRegistry,
+		logger.GetLogger(),
+		usecases.GetRestoreBackupUsecase(),
+		restoreDatabaseCache,
+		tasks_cancellation.GetTaskCancelManager(),
+		time.Time{},
+		sync.Once{},
+		atomic.Bool{},
 	}
 }
 
 func CreateTestRestorerNodeWithUsecase(usecase restores_core.RestoreBackupUsecase) *RestorerNode {
 	return &RestorerNode{
-		nodeID:               uuid.New(),
-		databaseService:      databases.GetDatabaseService(),
-		backupService:        backups.GetBackupService(),
-		fieldEncryptor:       encryption.GetFieldEncryptor(),
-		restoreRepository:    restoreRepository,
-		backupConfigService:  backups_config.GetBackupConfigService(),
-		storageService:       storages.GetStorageService(),
-		restoreNodesRegistry: restoreNodesRegistry,
-		logger:               logger.GetLogger(),
-		restoreBackupUsecase: usecase,
-		cacheUtil:            restoreDatabaseCache,
-		restoreCancelManager: tasks_cancellation.GetTaskCancelManager(),
-		lastHeartbeat:        time.Time{},
-		runOnce:              sync.Once{},
-		hasRun:               atomic.Bool{},
+		uuid.New(),
+		databases.GetDatabaseService(),
+		backups_services.GetBackupService(),
+		encryption.GetFieldEncryptor(),
+		restoreRepository,
+		backups_config.GetBackupConfigService(),
+		storages.GetStorageService(),
+		restoreNodesRegistry,
+		logger.GetLogger(),
+		usecase,
+		restoreDatabaseCache,
+		tasks_cancellation.GetTaskCancelManager(),
+		time.Time{},
+		sync.Once{},
+		atomic.Bool{},
 	}
 }
 
 func CreateTestRestoresScheduler() *RestoresScheduler {
 	return &RestoresScheduler{
 		restoreRepository,
-		backups.GetBackupService(),
+		backups_services.GetBackupService(),
 		storages.GetStorageService(),
 		backups_config.GetBackupConfigService(),
 		restoreNodesRegistry,

@@ -14,9 +14,10 @@ import (
 
 	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups"
 	"databasus-backend/internal/features/backups/backups/backuping"
+	backups_controllers "databasus-backend/internal/features/backups/backups/controllers"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
@@ -209,7 +210,9 @@ func setUpRoutes(r *gin.Engine) {
 	userController := users_controllers.GetUserController()
 	userController.RegisterRoutes(v1)
 	system_healthcheck.GetHealthcheckController().RegisterRoutes(v1)
-	backups.GetBackupController().RegisterPublicRoutes(v1)
+	backups_controllers.GetBackupController().RegisterPublicRoutes(v1)
+	backups_controllers.GetPostgresWalBackupController().RegisterRoutes(v1)
+	databases.GetDatabaseController().RegisterPublicRoutes(v1)
 
 	// Setup auth middleware
 	userService := users_services.GetUserService()
@@ -226,7 +229,7 @@ func setUpRoutes(r *gin.Engine) {
 	notifiers.GetNotifierController().RegisterRoutes(protected)
 	storages.GetStorageController().RegisterRoutes(protected)
 	databases.GetDatabaseController().RegisterRoutes(protected)
-	backups.GetBackupController().RegisterRoutes(protected)
+	backups_controllers.GetBackupController().RegisterRoutes(protected)
 	restores.GetRestoreController().RegisterRoutes(protected)
 	healthcheck_config.GetHealthcheckConfigController().RegisterRoutes(protected)
 	healthcheck_attempt.GetHealthcheckAttemptController().RegisterRoutes(protected)
@@ -238,7 +241,7 @@ func setUpRoutes(r *gin.Engine) {
 
 func setUpDependencies() {
 	databases.SetupDependencies()
-	backups.SetupDependencies()
+	backups_services.SetupDependencies()
 	restores.SetupDependencies()
 	healthcheck_config.SetupDependencies()
 	audit_logs.SetupDependencies()

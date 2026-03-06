@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_controllers "databasus-backend/internal/features/backups/backups/controllers"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -58,7 +58,7 @@ func Test_MakeRestore_WhenCacheMissed_RestoreFails(t *testing.T) {
 		cache_utils.ClearAllCache()
 	}()
 
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Create restore but DON'T cache DB credentials
 	// Also don't set embedded DB fields to avoid schema issues
@@ -126,7 +126,7 @@ func Test_MakeRestore_WhenTaskStarts_CacheDeletedImmediately(t *testing.T) {
 		cache_utils.ClearAllCache()
 	}()
 
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	// Create restore with cached DB credentials
 	// Don't set embedded DB fields in the restore model itself

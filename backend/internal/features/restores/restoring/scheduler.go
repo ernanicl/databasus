@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
@@ -26,7 +26,7 @@ const (
 
 type RestoresScheduler struct {
 	restoreRepository        *restores_core.RestoreRepository
-	backupService            *backups.BackupService
+	backupService            *backups_services.BackupService
 	storageService           *storages.StorageService
 	backupConfigService      *backups_config.BackupConfigService
 	restoreNodesRegistry     *RestoreNodesRegistry

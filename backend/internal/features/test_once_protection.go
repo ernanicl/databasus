@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups"
 	"databasus-backend/internal/features/backups/backups/backuping"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	healthcheck_config "databasus-backend/internal/features/healthcheck/config"
@@ -26,8 +26,8 @@ func Test_SetupDependencies_CalledTwice_LogsWarning(t *testing.T) {
 	audit_logs.SetupDependencies()
 	audit_logs.SetupDependencies()
 
-	backups.SetupDependencies()
-	backups.SetupDependencies()
+	backups_services.SetupDependencies()
+	backups_services.SetupDependencies()
 
 	backups_config.SetupDependencies()
 	backups_config.SetupDependencies()

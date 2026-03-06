@@ -18,7 +18,7 @@ import (
 
 	env_config "databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups"
+	backups_controllers "databasus-backend/internal/features/backups/backups/controllers"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -440,7 +440,7 @@ func Test_CancelRestore_InProgressRestore_SuccessfullyCancelled(t *testing.T) {
 	}()
 
 	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
-	backup := backups.CreateTestBackup(database.ID, storage.ID)
+	backup := backups_controllers.CreateTestBackup(database.ID, storage.ID)
 
 	mockUsecase := &restoring.MockBlockingRestoreUsecase{
 		StartedChan: make(chan bool, 1),

@@ -12,6 +12,10 @@ labels: bug
 
 <!-- e.g. Ubuntu 22.04 x64, macOS 14 ARM, Windows 11 x64 -->
 
+## Database type and version (optional, for DB-related bugs)
+
+<!-- e.g. PostgreSQL 16 in Docker, MySQL 8.0 installed on server, MariaDB 11.4 in AWS Cloud -->
+
 ## Describe the bug (please write manually, do not ask AI to summarize)
 
 **What happened:**

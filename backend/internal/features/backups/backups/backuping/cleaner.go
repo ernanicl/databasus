@@ -80,8 +80,7 @@ func (c *BackupCleaner) DeleteBackup(backup *backups_core.Backup) error {
 		return err
 	}
 
-	err = storage.DeleteFile(c.fieldEncryptor, backup.FileName)
-	if err != nil {
+	if err := storage.DeleteFile(c.fieldEncryptor, backup.FileName); err != nil {
 		// we do not return error here, because sometimes clean up performed
 		// before unavailable storage removal or change - therefore we should
 		// proceed even in case of error. It's possible that some S3 or
@@ -408,6 +407,10 @@ func buildGFSKeepSet(
 ) map[uuid.UUID]bool {
 	keep := make(map[uuid.UUID]bool)
 
+	if len(backups) == 0 {
+		return keep
+	}
+
 	hoursSeen := make(map[string]bool)
 	daysSeen := make(map[string]bool)
 	weeksSeen := make(map[string]bool)
@@ -415,6 +418,52 @@ func buildGFSKeepSet(
 	yearsSeen := make(map[string]bool)
 
 	hoursKept, daysKept, weeksKept, monthsKept, yearsKept := 0, 0, 0, 0, 0
+
+	// Compute per-level time-window cutoffs so higher-frequency slots
+	// cannot absorb backups that belong to lower-frequency levels.
+	ref := backups[0].CreatedAt
+
+	rawHourlyCutoff := ref.Add(-time.Duration(hours) * time.Hour)
+	rawDailyCutoff := ref.Add(-time.Duration(days) * 24 * time.Hour)
+	rawWeeklyCutoff := ref.Add(-time.Duration(weeks) * 7 * 24 * time.Hour)
+	rawMonthlyCutoff := ref.AddDate(0, -months, 0)
+	rawYearlyCutoff := ref.AddDate(-years, 0, 0)
+
+	// Hierarchical capping: each level's window cannot extend further back
+	// than the nearest active lower-frequency level's window.
+	yearlyCutoff := rawYearlyCutoff
+
+	monthlyCutoff := rawMonthlyCutoff
+	if years > 0 {
+		monthlyCutoff = laterOf(monthlyCutoff, yearlyCutoff)
+	}
+
+	weeklyCutoff := rawWeeklyCutoff
+	if months > 0 {
+		weeklyCutoff = laterOf(weeklyCutoff, monthlyCutoff)
+	} else if years > 0 {
+		weeklyCutoff = laterOf(weeklyCutoff, yearlyCutoff)
+	}
+
+	dailyCutoff := rawDailyCutoff
+	if weeks > 0 {
+		dailyCutoff = laterOf(dailyCutoff, weeklyCutoff)
+	} else if months > 0 {
+		dailyCutoff = laterOf(dailyCutoff, monthlyCutoff)
+	} else if years > 0 {
+		dailyCutoff = laterOf(dailyCutoff, yearlyCutoff)
+	}
+
+	hourlyCutoff := rawHourlyCutoff
+	if days > 0 {
+		hourlyCutoff = laterOf(hourlyCutoff, dailyCutoff)
+	} else if weeks > 0 {
+		hourlyCutoff = laterOf(hourlyCutoff, weeklyCutoff)
+	} else if months > 0 {
+		hourlyCutoff = laterOf(hourlyCutoff, monthlyCutoff)
+	} else if years > 0 {
+		hourlyCutoff = laterOf(hourlyCutoff, yearlyCutoff)
+	}
 
 	for _, backup := range backups {
 		t := backup.CreatedAt
@@ -426,31 +475,31 @@ func buildGFSKeepSet(
 		monthKey := t.Format("2006-01")
 		yearKey := t.Format("2006")
 
-		if hours > 0 && hoursKept < hours && !hoursSeen[hourKey] {
+		if hours > 0 && hoursKept < hours && !hoursSeen[hourKey] && t.After(hourlyCutoff) {
 			keep[backup.ID] = true
 			hoursSeen[hourKey] = true
 			hoursKept++
 		}
 
-		if days > 0 && daysKept < days && !daysSeen[dayKey] {
+		if days > 0 && daysKept < days && !daysSeen[dayKey] && t.After(dailyCutoff) {
 			keep[backup.ID] = true
 			daysSeen[dayKey] = true
 			daysKept++
 		}
 
-		if weeks > 0 && weeksKept < weeks && !weeksSeen[weekKey] {
+		if weeks > 0 && weeksKept < weeks && !weeksSeen[weekKey] && t.After(weeklyCutoff) {
 			keep[backup.ID] = true
 			weeksSeen[weekKey] = true
 			weeksKept++
 		}
 
-		if months > 0 && monthsKept < months && !monthsSeen[monthKey] {
+		if months > 0 && monthsKept < months && !monthsSeen[monthKey] && t.After(monthlyCutoff) {
 			keep[backup.ID] = true
 			monthsSeen[monthKey] = true
 			monthsKept++
 		}
 
-		if years > 0 && yearsKept < years && !yearsSeen[yearKey] {
+		if years > 0 && yearsKept < years && !yearsSeen[yearKey] && t.After(yearlyCutoff) {
 			keep[backup.ID] = true
 			yearsSeen[yearKey] = true
 			yearsKept++
@@ -458,4 +507,12 @@ func buildGFSKeepSet(
 	}
 
 	return keep
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+
+	return b
 }

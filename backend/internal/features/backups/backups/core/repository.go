@@ -1,13 +1,13 @@
 package backups_core
 
 import (
-	"databasus-backend/internal/storage"
 	"errors"
-
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"databasus-backend/internal/storage"
 )
 
 type BackupRepository struct{}
@@ -88,7 +88,7 @@ func (r *BackupRepository) FindLastByDatabaseID(databaseID uuid.UUID) (*Backup, 
 		Where("database_id = ?", databaseID).
 		Order("created_at DESC").
 		First(&backup).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 

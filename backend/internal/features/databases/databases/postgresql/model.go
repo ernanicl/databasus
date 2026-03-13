@@ -2,9 +2,6 @@ package postgresql
 
 import (
 	"context"
-	"databasus-backend/internal/config"
-	"databasus-backend/internal/util/encryption"
-	"databasus-backend/internal/util/tools"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +13,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+
+	"databasus-backend/internal/config"
+	"databasus-backend/internal/util/encryption"
+	"databasus-backend/internal/util/tools"
 )
 
 type PostgresBackupType string
@@ -1112,7 +1113,7 @@ func checkBackupPermissions(
 }
 
 // buildConnectionStringForDB builds connection string for specific database
-func buildConnectionStringForDB(p *PostgresqlDatabase, dbName string, password string) string {
+func buildConnectionStringForDB(p *PostgresqlDatabase, dbName, password string) string {
 	sslMode := "disable"
 	if p.IsHttps {
 		sslMode = "require"
@@ -1152,8 +1153,8 @@ func isSupabaseConnection(host, username string) bool {
 }
 
 func extractSupabaseProjectID(username string) string {
-	if idx := strings.Index(username, "."); idx != -1 {
-		return username[idx+1:]
+	if _, after, found := strings.Cut(username, "."); found {
+		return after
 	}
 	return ""
 }

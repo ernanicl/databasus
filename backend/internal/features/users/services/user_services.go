@@ -194,7 +194,6 @@ func (s *UserService) GetUserFromToken(token string) (*users_models.User, error)
 		}
 		return []byte(secretKey), nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("invalid token: %w", err)
 	}
@@ -275,7 +274,6 @@ func (s *UserService) CreateInitialAdmin() error {
 
 func (s *UserService) IsRootAdminHasPassword() (bool, error) {
 	admin, err := s.userRepository.GetUserByEmail("admin")
-
 	if err != nil {
 		return false, fmt.Errorf("failed to get admin user: %w", err)
 	}
@@ -321,7 +319,7 @@ func (s *UserService) SetRootAdminPassword(password string) error {
 	return nil
 }
 
-func (s *UserService) ChangeUserPasswordByEmail(email string, newPassword string) error {
+func (s *UserService) ChangeUserPasswordByEmail(email, newPassword string) error {
 	user, err := s.userRepository.GetUserByEmail(email)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
@@ -687,7 +685,11 @@ func (s *UserService) handleGitHubOAuthWithEndpoint(
 	}
 
 	client := oauthConfig.Client(context.Background(), token)
-	resp, err := client.Get(userAPIURL)
+	githubReq, err := http.NewRequestWithContext(context.Background(), "GET", userAPIURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user info request: %w", err)
+	}
+	resp, err := client.Do(githubReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
@@ -756,7 +758,11 @@ func (s *UserService) handleGoogleOAuthWithEndpoint(
 	}
 
 	client := oauthConfig.Client(context.Background(), token)
-	resp, err := client.Get(userAPIURL)
+	googleReq, err := http.NewRequestWithContext(context.Background(), "GET", userAPIURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user info request: %w", err)
+	}
+	resp, err := client.Do(googleReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
@@ -952,7 +958,11 @@ func (s *UserService) fetchGitHubPrimaryEmail(
 		emailsURL = baseURL + "/user/emails"
 	}
 
-	resp, err := client.Get(emailsURL)
+	emailsReq, err := http.NewRequestWithContext(context.Background(), "GET", emailsURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create user emails request: %w", err)
+	}
+	resp, err := client.Do(emailsReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to get user emails: %w", err)
 	}

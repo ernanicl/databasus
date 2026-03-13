@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"databasus-backend/internal/util/encryption"
-	"databasus-backend/internal/util/tools"
-
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+
+	"databasus-backend/internal/util/encryption"
+	"databasus-backend/internal/util/tools"
 )
 
 type MariadbDatabase struct {
@@ -391,7 +391,7 @@ func (m *MariadbDatabase) HasPrivilege(priv string) bool {
 }
 
 func HasPrivilege(privileges, priv string) bool {
-	for _, p := range strings.Split(privileges, ",") {
+	for p := range strings.SplitSeq(privileges, ",") {
 		if strings.TrimSpace(p) == priv {
 			return true
 		}
@@ -399,7 +399,7 @@ func HasPrivilege(privileges, priv string) bool {
 	return false
 }
 
-func (m *MariadbDatabase) buildDSN(password string, database string) string {
+func (m *MariadbDatabase) buildDSN(password, database string) string {
 	tlsConfig := "false"
 
 	if m.IsHttps {

@@ -3,7 +3,6 @@ package azure_blob_storage
 import (
 	"bytes"
 	"context"
-	"databasus-backend/internal/util/encryption"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,6 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/google/uuid"
+
+	"databasus-backend/internal/util/encryption"
 )
 
 const (
@@ -108,7 +109,7 @@ func (s *AzureBlobStorage) SaveFile(
 			return fmt.Errorf("read error: %w", readErr)
 		}
 
-		blockID := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%06d", blockNumber)))
+		blockID := base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%06d", blockNumber))
 
 		_, err := blockBlobClient.StageBlock(
 			ctx,
@@ -336,7 +337,7 @@ func (s *AzureBlobStorage) buildBlobName(fileName string) string {
 	prefix = strings.TrimPrefix(prefix, "/")
 
 	if !strings.HasSuffix(prefix, "/") {
-		prefix = prefix + "/"
+		prefix += "/"
 	}
 
 	return prefix + fileName

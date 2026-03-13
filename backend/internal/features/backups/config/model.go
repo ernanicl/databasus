@@ -1,16 +1,17 @@
 package backups_config
 
 import (
-	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/intervals"
-	plans "databasus-backend/internal/features/plan"
-	"databasus-backend/internal/features/storages"
-	"databasus-backend/internal/util/period"
 	"errors"
 	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"databasus-backend/internal/config"
+	"databasus-backend/internal/features/intervals"
+	plans "databasus-backend/internal/features/plan"
+	"databasus-backend/internal/features/storages"
+	"databasus-backend/internal/util/period"
 )
 
 type BackupConfig struct {
@@ -43,7 +44,7 @@ type BackupConfig struct {
 	Encryption BackupEncryption `json:"encryption" gorm:"column:encryption;type:text;not null;default:'NONE'"`
 
 	// MaxBackupSizeMB limits individual backup size. 0 = unlimited.
-	MaxBackupSizeMB int64 `json:"maxBackupSizeMb"       gorm:"column:max_backup_size_mb;type:int;not null"`
+	MaxBackupSizeMB int64 `json:"maxBackupSizeMb" gorm:"column:max_backup_size_mb;type:int;not null"`
 	// MaxBackupsTotalSizeMB limits total size of all backups. 0 = unlimited.
 	MaxBackupsTotalSizeMB int64 `json:"maxBackupsTotalSizeMb" gorm:"column:max_backups_total_size_mb;type:int;not null"`
 }

@@ -22,7 +22,7 @@ RUN npm run build
 
 # ========= BUILD BACKEND =========
 # Backend build stage
-FROM --platform=$BUILDPLATFORM golang:1.24.9 AS backend-build
+FROM --platform=$BUILDPLATFORM golang:1.26.1 AS backend-build
 
 # Make TARGET args available early so tools built here match the final image arch
 ARG TARGETOS
@@ -64,6 +64,43 @@ RUN CGO_ENABLED=0 \
   GOOS=$TARGETOS \
   GOARCH=$TARGETARCH \
   go build -o /app/main ./cmd/main.go
+
+
+# ========= BUILD AGENT =========
+# Builds the databasus-agent CLI binary for BOTH x86_64 and ARM64.
+# Both architectures are always built because:
+# - Databasus server runs on one arch (e.g. amd64)
+# - The agent runs on remote PostgreSQL servers that may be on a
+#   different arch (e.g. arm64)
+# - The backend serves the correct binary based on the agent's
+#   ?arch= query parameter
+#
+# We cross-compile from the build platform (no QEMU needed) because the
+# agent is pure Go with zero C dependencies.
+# CGO_ENABLED=0 produces fully static binaries — no glibc/musl dependency,
+# so the agent runs on any Linux distro (Alpine, Debian, Ubuntu, RHEL, etc.).
+# APP_VERSION is baked into the binary via -ldflags so the agent can
+# compare its version against the server and auto-update when needed.
+FROM --platform=$BUILDPLATFORM golang:1.26.1 AS agent-build
+
+ARG APP_VERSION=dev
+
+WORKDIR /agent
+
+COPY agent/go.mod ./
+RUN go mod download
+
+COPY agent/ ./
+
+# Build for x86_64 (amd64) — static binary, no glibc dependency
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags "-X main.Version=${APP_VERSION}" \
+    -o /agent-binaries/databasus-agent-linux-amd64 ./cmd/main.go
+
+# Build for ARM64 (arm64) — static binary, no glibc dependency
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+    go build -ldflags "-X main.Version=${APP_VERSION}" \
+    -o /agent-binaries/databasus-agent-linux-arm64 ./cmd/main.go
 
 
 # ========= RUNTIME =========
@@ -219,6 +256,10 @@ COPY backend/migrations ./migrations
 
 # Copy UI files
 COPY --from=backend-build /app/ui/build ./ui/build
+
+# Copy agent binaries (both architectures) — served by the backend
+# at GET /api/v1/system/agent?arch=amd64|arm64
+COPY --from=agent-build /agent-binaries ./agent-binaries
 
 # Copy .env file (with fallback to .env.production.example)
 COPY backend/.env* /app/
@@ -397,6 +438,8 @@ fi
 # Create database and set password for postgres user
 echo "Setting up database and user..."
 gosu postgres \$PG_BIN/psql -p 5437 -h localhost -d postgres << 'SQL'
+
+# We use stub password, because internal DB is not exposed outside container
 ALTER USER postgres WITH PASSWORD 'Q1234567';
 SELECT 'CREATE DATABASE databasus OWNER postgres'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'databasus')

@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_dto "databasus-backend/internal/features/backups/backups/dto"
 	backup_encryption "databasus-backend/internal/features/backups/backups/encryption"
@@ -16,8 +18,6 @@ import (
 	encryption_secrets "databasus-backend/internal/features/encryption/secrets"
 	util_encryption "databasus-backend/internal/util/encryption"
 	util_wal "databasus-backend/internal/util/wal"
-
-	"github.com/google/uuid"
 )
 
 // PostgreWalBackupService handles WAL segment and basebackup uploads from the databasus-cli agent.
@@ -223,6 +223,80 @@ func (s *PostgreWalBackupService) DownloadBackupFile(
 	}
 
 	return s.backupService.GetBackupReader(backupID)
+}
+
+func (s *PostgreWalBackupService) GetNextFullBackupTime(
+	database *databases.Database,
+) (*backups_dto.GetNextFullBackupTimeResponse, error) {
+	if err := s.validateWalBackupType(database); err != nil {
+		return nil, err
+	}
+
+	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(database.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get backup config: %w", err)
+	}
+
+	if backupConfig.BackupInterval == nil {
+		return nil, fmt.Errorf("no backup interval configured for database %s", database.ID)
+	}
+
+	lastFullBackup, err := s.backupRepository.FindLastCompletedFullWalBackupByDatabaseID(
+		database.ID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query last full backup: %w", err)
+	}
+
+	var lastBackupTime *time.Time
+	if lastFullBackup != nil {
+		lastBackupTime = &lastFullBackup.CreatedAt
+	}
+
+	now := time.Now().UTC()
+	nextTime := backupConfig.BackupInterval.NextTriggerTime(now, lastBackupTime)
+
+	return &backups_dto.GetNextFullBackupTimeResponse{
+		NextFullBackupTime: nextTime,
+	}, nil
+}
+
+// ReportError creates a FAILED backup record with the agent's error message.
+func (s *PostgreWalBackupService) ReportError(
+	database *databases.Database,
+	errorMsg string,
+) error {
+	if err := s.validateWalBackupType(database); err != nil {
+		return err
+	}
+
+	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(database.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get backup config: %w", err)
+	}
+
+	if backupConfig.Storage == nil {
+		return fmt.Errorf("no storage configured for database %s", database.ID)
+	}
+
+	now := time.Now().UTC()
+	backup := &backups_core.Backup{
+		ID:          uuid.New(),
+		DatabaseID:  database.ID,
+		StorageID:   backupConfig.Storage.ID,
+		Status:      backups_core.BackupStatusFailed,
+		FailMessage: &errorMsg,
+		Encryption:  backupConfig.Encryption,
+		CreatedAt:   now,
+	}
+
+	backup.GenerateFilename(database.Name)
+
+	if err := s.backupRepository.Save(backup); err != nil {
+		return fmt.Errorf("failed to save error backup record: %w", err)
+	}
+
+	return nil
 }
 
 func (s *PostgreWalBackupService) validateWalChain(
@@ -432,80 +506,6 @@ func (s *PostgreWalBackupService) markFailed(backup *backups_core.Backup, errMsg
 	}
 }
 
-func (s *PostgreWalBackupService) GetNextFullBackupTime(
-	database *databases.Database,
-) (*backups_dto.GetNextFullBackupTimeResponse, error) {
-	if err := s.validateWalBackupType(database); err != nil {
-		return nil, err
-	}
-
-	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(database.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get backup config: %w", err)
-	}
-
-	if backupConfig.BackupInterval == nil {
-		return nil, fmt.Errorf("no backup interval configured for database %s", database.ID)
-	}
-
-	lastFullBackup, err := s.backupRepository.FindLastCompletedFullWalBackupByDatabaseID(
-		database.ID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query last full backup: %w", err)
-	}
-
-	var lastBackupTime *time.Time
-	if lastFullBackup != nil {
-		lastBackupTime = &lastFullBackup.CreatedAt
-	}
-
-	now := time.Now().UTC()
-	nextTime := backupConfig.BackupInterval.NextTriggerTime(now, lastBackupTime)
-
-	return &backups_dto.GetNextFullBackupTimeResponse{
-		NextFullBackupTime: nextTime,
-	}, nil
-}
-
-// ReportError creates a FAILED backup record with the agent's error message.
-func (s *PostgreWalBackupService) ReportError(
-	database *databases.Database,
-	errorMsg string,
-) error {
-	if err := s.validateWalBackupType(database); err != nil {
-		return err
-	}
-
-	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(database.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get backup config: %w", err)
-	}
-
-	if backupConfig.Storage == nil {
-		return fmt.Errorf("no storage configured for database %s", database.ID)
-	}
-
-	now := time.Now().UTC()
-	backup := &backups_core.Backup{
-		ID:          uuid.New(),
-		DatabaseID:  database.ID,
-		StorageID:   backupConfig.Storage.ID,
-		Status:      backups_core.BackupStatusFailed,
-		FailMessage: &errorMsg,
-		Encryption:  backupConfig.Encryption,
-		CreatedAt:   now,
-	}
-
-	backup.GenerateFilename(database.Name)
-
-	if err := s.backupRepository.Save(backup); err != nil {
-		return fmt.Errorf("failed to save error backup record: %w", err)
-	}
-
-	return nil
-}
-
 func (s *PostgreWalBackupService) resolveFullBackup(
 	databaseID uuid.UUID,
 	backupID *uuid.UUID,
@@ -609,5 +609,5 @@ func (cr *countingReader) Read(p []byte) (n int, err error) {
 	n, err = cr.r.Read(p)
 	cr.n += int64(n)
 
-	return
+	return n, err
 }

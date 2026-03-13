@@ -2,7 +2,7 @@ package teams_notifier
 
 import (
 	"bytes"
-	"databasus-backend/internal/util/encryption"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +11,8 @@ import (
 	"net/url"
 
 	"github.com/google/uuid"
+
+	"databasus-backend/internal/util/encryption"
 )
 
 type TeamsNotifier struct {
@@ -87,7 +89,7 @@ func (n *TeamsNotifier) Send(
 	}
 
 	body, _ := json.Marshal(p)
-	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

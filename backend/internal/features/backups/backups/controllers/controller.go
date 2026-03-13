@@ -2,13 +2,7 @@ package backups_controllers
 
 import (
 	"context"
-	backups_core "databasus-backend/internal/features/backups/backups/core"
-	backups_download "databasus-backend/internal/features/backups/backups/download"
-	backups_dto "databasus-backend/internal/features/backups/backups/dto"
-	backups_services "databasus-backend/internal/features/backups/backups/services"
-	"databasus-backend/internal/features/databases"
-	users_middleware "databasus-backend/internal/features/users/middleware"
-	files_utils "databasus-backend/internal/util/files"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +10,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_download "databasus-backend/internal/features/backups/backups/download"
+	backups_dto "databasus-backend/internal/features/backups/backups/dto"
+	backups_services "databasus-backend/internal/features/backups/backups/services"
+	"databasus-backend/internal/features/databases"
+	users_middleware "databasus-backend/internal/features/users/middleware"
+	files_utils "databasus-backend/internal/util/files"
 )
 
 type BackupController struct {
@@ -197,7 +199,7 @@ func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 
 	response, err := c.backupService.GenerateDownloadToken(user, id)
 	if err != nil {
-		if err == backups_download.ErrDownloadAlreadyInProgress {
+		if errors.Is(err, backups_download.ErrDownloadAlreadyInProgress) {
 			ctx.JSON(
 				http.StatusConflict,
 				gin.H{
@@ -248,7 +250,7 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 
 	downloadToken, rateLimiter, err := c.backupService.ValidateDownloadToken(token)
 	if err != nil {
-		if err == backups_download.ErrDownloadAlreadyInProgress {
+		if errors.Is(err, backups_download.ErrDownloadAlreadyInProgress) {
 			ctx.JSON(
 				http.StatusConflict,
 				gin.H{

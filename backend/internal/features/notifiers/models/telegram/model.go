@@ -1,7 +1,7 @@
 package telegram_notifier
 
 import (
-	"databasus-backend/internal/util/encryption"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"databasus-backend/internal/util/encryption"
 )
 
 type TelegramNotifier struct {
@@ -64,7 +66,7 @@ func (t *TelegramNotifier) Send(
 		data.Set("message_thread_id", strconv.FormatInt(*t.ThreadID, 10))
 	}
 
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", apiURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

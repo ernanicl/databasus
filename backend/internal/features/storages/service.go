@@ -3,14 +3,14 @@ package storages
 import (
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_models "databasus-backend/internal/features/users/models"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/encryption"
-
-	"github.com/google/uuid"
 )
 
 type StorageService struct {
@@ -364,10 +364,8 @@ func (s *StorageService) TransferStorageToWorkspace(
 				return ErrStorageHasOtherAttachedDatabasesCannotTransfer
 			}
 		}
-	} else {
-		if len(attachedDatabasesIDs) > 0 {
-			return ErrStorageHasAttachedDatabasesCannotTransfer
-		}
+	} else if len(attachedDatabasesIDs) > 0 {
+		return ErrStorageHasAttachedDatabasesCannotTransfer
 	}
 
 	sourceWorkspaceID := existingStorage.WorkspaceID

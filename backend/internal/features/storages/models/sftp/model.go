@@ -2,7 +2,6 @@ package sftp_storage
 
 import (
 	"context"
-	"databasus-backend/internal/util/encryption"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+
+	"databasus-backend/internal/util/encryption"
 )
 
 const (
@@ -297,12 +298,7 @@ func (s *SFTPStorage) connectWithContext(
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 
-	var hostKeyCallback ssh.HostKeyCallback
-	if s.SkipHostKeyVerify {
-		hostKeyCallback = ssh.InsecureIgnoreHostKey()
-	} else {
-		hostKeyCallback = ssh.InsecureIgnoreHostKey()
-	}
+	hostKeyCallback := ssh.InsecureIgnoreHostKey()
 
 	config := &ssh.ClientConfig{
 		User:            s.Username,

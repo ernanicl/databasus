@@ -101,27 +101,6 @@ func (s *RestoresScheduler) IsSchedulerRunning() bool {
 	return s.lastCheckTime.After(time.Now().UTC().Add(-schedulerHealthcheckThreshold))
 }
 
-func (s *RestoresScheduler) failRestoresInProgress() error {
-	restoresInProgress, err := s.restoreRepository.FindByStatus(
-		restores_core.RestoreStatusInProgress,
-	)
-	if err != nil {
-		return err
-	}
-
-	for _, restore := range restoresInProgress {
-		failMessage := "Restore failed due to application restart"
-		restore.FailMessage = &failMessage
-		restore.Status = restores_core.RestoreStatusFailed
-
-		if err := s.restoreRepository.Save(restore); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *RestoresScheduler) StartRestore(restoreID uuid.UUID, dbCache *RestoreDatabaseCache) error {
 	// If dbCache not provided, try to fetch from DB (for backward compatibility/testing)
 	if dbCache == nil {
@@ -265,7 +244,7 @@ func (s *RestoresScheduler) calculateLeastBusyNode() (*uuid.UUID, error) {
 	return &bestNode.ID, nil
 }
 
-func (s *RestoresScheduler) onRestoreCompleted(nodeID uuid.UUID, restoreID uuid.UUID) {
+func (s *RestoresScheduler) onRestoreCompleted(nodeID, restoreID uuid.UUID) {
 	// Verify this task is actually a restore (registry contains multiple task types)
 	_, err := s.restoreRepository.FindByID(restoreID)
 	if err != nil {
@@ -324,6 +303,27 @@ func (s *RestoresScheduler) onRestoreCompleted(nodeID uuid.UUID, restoreID uuid.
 			err,
 		)
 	}
+}
+
+func (s *RestoresScheduler) failRestoresInProgress() error {
+	restoresInProgress, err := s.restoreRepository.FindByStatus(
+		restores_core.RestoreStatusInProgress,
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, restore := range restoresInProgress {
+		failMessage := "Restore failed due to application restart"
+		restore.FailMessage = &failMessage
+		restore.Status = restores_core.RestoreStatusFailed
+
+		if err := s.restoreRepository.Save(restore); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *RestoresScheduler) checkDeadNodesAndFailRestores() error {

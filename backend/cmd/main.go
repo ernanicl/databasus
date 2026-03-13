@@ -12,6 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
+	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
 	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
@@ -28,6 +34,7 @@ import (
 	"databasus-backend/internal/features/restores"
 	"databasus-backend/internal/features/restores/restoring"
 	"databasus-backend/internal/features/storages"
+	system_agent "databasus-backend/internal/features/system/agent"
 	system_healthcheck "databasus-backend/internal/features/system/healthcheck"
 	system_version "databasus-backend/internal/features/system/version"
 	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
@@ -40,12 +47,6 @@ import (
 	files_utils "databasus-backend/internal/util/files"
 	"databasus-backend/internal/util/logger"
 	_ "databasus-backend/swagger" // swagger docs
-
-	"github.com/gin-contrib/cors"
-	"github.com/gin-contrib/gzip"
-	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 // @title Databasus Backend API
@@ -82,7 +83,6 @@ func main() {
 		config.GetEnv().TempFolder,
 		config.GetEnv().DataFolder,
 	})
-
 	if err != nil {
 		log.Error("Failed to ensure directories", "error", err)
 		os.Exit(1)
@@ -149,7 +149,7 @@ func handlePasswordReset(log *slog.Logger) {
 	resetPassword(*email, *newPassword, log)
 }
 
-func resetPassword(email string, newPassword string, log *slog.Logger) {
+func resetPassword(email, newPassword string, log *slog.Logger) {
 	log.Info("Resetting password...")
 
 	userService := users_services.GetUserService()
@@ -212,6 +212,7 @@ func setUpRoutes(r *gin.Engine) {
 	userController.RegisterRoutes(v1)
 	system_healthcheck.GetHealthcheckController().RegisterRoutes(v1)
 	system_version.GetVersionController().RegisterRoutes(v1)
+	system_agent.GetAgentController().RegisterRoutes(v1)
 	backups_controllers.GetBackupController().RegisterPublicRoutes(v1)
 	backups_controllers.GetPostgresWalBackupController().RegisterRoutes(v1)
 	databases.GetDatabaseController().RegisterPublicRoutes(v1)
@@ -352,7 +353,9 @@ func generateSwaggerDocs(log *slog.Logger) {
 		return
 	}
 
-	cmd := exec.Command("swag", "init", "-d", currentDir, "-g", "cmd/main.go", "-o", "swagger")
+	cmd := exec.CommandContext(
+		context.Background(), "swag", "init", "-d", currentDir, "-g", "cmd/main.go", "-o", "swagger",
+	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -366,7 +369,7 @@ func generateSwaggerDocs(log *slog.Logger) {
 func runMigrations(log *slog.Logger) {
 	log.Info("Running database migrations...")
 
-	cmd := exec.Command("goose", "-dir", "./migrations", "up")
+	cmd := exec.CommandContext(context.Background(), "goose", "-dir", "./migrations", "up")
 	cmd.Env = append(
 		os.Environ(),
 		"GOOSE_DRIVER=postgres",

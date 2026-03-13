@@ -7,6 +7,18 @@ run:
 
 linters:
   default: standard
+  enable:
+    - funcorder
+    - gosec
+    - bodyclose
+    - errorlint
+    - gocritic
+    - unconvert
+    - misspell
+    - dupword
+    - errname
+    - noctx
+    - modernize
 
   settings:
     errcheck:

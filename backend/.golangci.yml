@@ -17,3 +17,7 @@ formatters:
     - gofmt
     - golines
     - goimports
+
+  settings:
+    golines:
+      max-len: 120

@@ -28,6 +28,7 @@ import (
 	"databasus-backend/internal/features/restores"
 	"databasus-backend/internal/features/restores/restoring"
 	"databasus-backend/internal/features/storages"
+	system_agent "databasus-backend/internal/features/system/agent"
 	system_healthcheck "databasus-backend/internal/features/system/healthcheck"
 	system_version "databasus-backend/internal/features/system/version"
 	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
@@ -212,6 +213,7 @@ func setUpRoutes(r *gin.Engine) {
 	userController.RegisterRoutes(v1)
 	system_healthcheck.GetHealthcheckController().RegisterRoutes(v1)
 	system_version.GetVersionController().RegisterRoutes(v1)
+	system_agent.GetAgentController().RegisterRoutes(v1)
 	backups_controllers.GetBackupController().RegisterPublicRoutes(v1)
 	backups_controllers.GetPostgresWalBackupController().RegisterRoutes(v1)
 	databases.GetDatabaseController().RegisterPublicRoutes(v1)

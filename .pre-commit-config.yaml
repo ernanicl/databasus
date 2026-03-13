@@ -41,3 +41,20 @@ repos:
         language: system
         files: ^backend/.*\.go$
         pass_filenames: false
+
+  # Agent checks
+  - repo: local
+    hooks:
+      - id: agent-format-and-lint
+        name: Agent Format & Lint (golangci-lint)
+        entry: bash -c "cd agent && golangci-lint fmt ./internal/... ./cmd/... && golangci-lint run ./internal/... ./cmd/..."
+        language: system
+        files: ^agent/.*\.go$
+        pass_filenames: false
+
+      - id: agent-go-mod-tidy
+        name: Agent Go Mod Tidy
+        entry: bash -c "cd agent && go mod tidy"
+        language: system
+        files: ^agent/.*\.go$
+        pass_filenames: false

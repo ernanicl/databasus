@@ -86,6 +86,39 @@ jobs:
           cd frontend
           npm run build
 
+  lint-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.9"
+          cache-dependency-path: agent/go.sum
+
+      - name: Download Go modules
+        run: |
+          cd agent
+          go mod download
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.7.2
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Run golangci-lint
+        run: |
+          cd agent
+          golangci-lint run
+
+      - name: Verify go mod tidy
+        run: |
+          cd agent
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go mod tidy made changes, please run 'go mod tidy' and commit the changes" && exit 1)
+
   test-frontend:
     runs-on: ubuntu-latest
     needs: [lint-frontend]
@@ -107,6 +140,29 @@ jobs:
         run: |
           cd frontend
           npm run test
+
+  test-agent:
+    runs-on: ubuntu-latest
+    needs: [lint-agent]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.9"
+          cache-dependency-path: agent/go.sum
+
+      - name: Download Go modules
+        run: |
+          cd agent
+          go mod download
+
+      - name: Run Go tests
+        run: |
+          cd agent
+          go test -count=1 -failfast ./internal/...
 
   test-backend:
     runs-on: self-hosted
@@ -441,7 +497,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:20
-    needs: [test-backend, test-frontend]
+    needs: [test-backend, test-frontend, test-agent]
     if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-release]') }}
     outputs:
       should_release: ${{ steps.version_bump.outputs.should_release }}
@@ -534,7 +590,7 @@ jobs:
 
   build-only:
     runs-on: self-hosted
-    needs: [test-backend, test-frontend]
+    needs: [test-backend, test-frontend, test-agent]
     if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[skip-release]') }}
     steps:
       - name: Clean workspace

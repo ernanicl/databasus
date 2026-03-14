@@ -1,6 +1,7 @@
 main
 .env
 docker-compose.yml
+!e2e/docker-compose.yml
 pgdata
 pgdata_test/
 mysqldata/

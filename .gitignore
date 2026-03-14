@@ -5,6 +5,7 @@ databasus-data/
 .env
 pgdata/
 docker-compose.yml
+!agent/e2e/docker-compose.yml
 node_modules/
 .idea
 /articles

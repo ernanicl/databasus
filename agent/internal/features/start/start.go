@@ -114,8 +114,8 @@ func validateConfig(cfg *config.Config) error {
 		return fmt.Errorf("argument pg-type must be 'host' or 'docker', got '%s'", cfg.PgType)
 	}
 
-	if cfg.WalDir == "" {
-		return errors.New("argument wal-dir is required")
+	if cfg.PgWalDir == "" {
+		return errors.New("argument pg-wal-dir is required")
 	}
 
 	if cfg.PgType == "docker" && cfg.PgDockerContainerName == "" {

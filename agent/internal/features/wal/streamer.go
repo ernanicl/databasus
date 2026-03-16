@@ -40,7 +40,7 @@ func NewStreamer(cfg *config.Config, apiClient *api.Client, log *slog.Logger) *S
 }
 
 func (s *Streamer) Run(ctx context.Context) {
-	s.log.Info("WAL streamer started", "walDir", s.cfg.WalDir)
+	s.log.Info("WAL streamer started", "pgWalDir", s.cfg.PgWalDir)
 
 	s.processQueue(ctx)
 
@@ -81,7 +81,7 @@ func (s *Streamer) processQueue(ctx context.Context) {
 }
 
 func (s *Streamer) listSegments() ([]string, error) {
-	entries, err := os.ReadDir(s.cfg.WalDir)
+	entries, err := os.ReadDir(s.cfg.PgWalDir)
 	if err != nil {
 		return nil, fmt.Errorf("read wal dir: %w", err)
 	}
@@ -112,7 +112,7 @@ func (s *Streamer) listSegments() ([]string, error) {
 }
 
 func (s *Streamer) uploadSegment(ctx context.Context, segmentName string) error {
-	filePath := filepath.Join(s.cfg.WalDir, segmentName)
+	filePath := filepath.Join(s.cfg.PgWalDir, segmentName)
 
 	pr, pw := io.Pipe()
 

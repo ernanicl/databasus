@@ -330,7 +330,7 @@ func createTestConfig(walDir, serverURL string) *config.Config {
 		DatabasusHost:          serverURL,
 		DbID:                   "test-db-id",
 		Token:                  "test-token",
-		WalDir:                 walDir,
+		PgWalDir:               walDir,
 		IsDeleteWalAfterUpload: &isDeleteEnabled,
 	}
 }

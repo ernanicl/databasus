@@ -1140,6 +1140,55 @@ func Test_CleanStaleUploadedBasebackups_SkipsActiveStreaming(t *testing.T) {
 	assert.Nil(t, updated.UploadCompletedAt)
 }
 
+func Test_CleanStaleUploadedBasebackups_CleansStorageFiles(t *testing.T) {
+	router := CreateTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	staleTime := time.Now().UTC().Add(-15 * time.Minute)
+	walBackupType := backups_core.PgWalBackupTypeFullBackup
+	staleBackup := &backups_core.Backup{
+		ID:                uuid.New(),
+		DatabaseID:        database.ID,
+		StorageID:         storage.ID,
+		Status:            backups_core.BackupStatusInProgress,
+		PgWalBackupType:   &walBackupType,
+		UploadCompletedAt: &staleTime,
+		BackupSizeMb:      500,
+		FileName:          "stale-basebackup-test-file",
+		CreatedAt:         staleTime,
+	}
+
+	err := backupRepository.Save(staleBackup)
+	assert.NoError(t, err)
+
+	cleaner := GetBackupCleaner()
+	err = cleaner.cleanStaleUploadedBasebackups()
+	assert.NoError(t, err)
+
+	updated, err := backupRepository.FindByID(staleBackup.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, backups_core.BackupStatusFailed, updated.Status)
+	assert.NotNil(t, updated.FailMessage)
+	assert.Contains(t, *updated.FailMessage, "finalization timed out")
+}
+
 func createTestInterval() *intervals.Interval {
 	timeOfDay := "04:00"
 	interval := &intervals.Interval{

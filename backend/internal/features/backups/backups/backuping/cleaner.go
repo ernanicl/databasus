@@ -113,6 +113,35 @@ func (c *BackupCleaner) cleanStaleUploadedBasebackups() error {
 	}
 
 	for _, backup := range staleBackups {
+		staleStorage, storageErr := c.storageService.GetStorageByID(backup.StorageID)
+		if storageErr != nil {
+			c.logger.Error(
+				"Failed to get storage for stale basebackup cleanup",
+				"backupId", backup.ID,
+				"storageId", backup.StorageID,
+				"error", storageErr,
+			)
+		} else {
+			if err := staleStorage.DeleteFile(c.fieldEncryptor, backup.FileName); err != nil {
+				c.logger.Error(
+					"Failed to delete stale basebackup file",
+					"backupId", backup.ID,
+					"fileName", backup.FileName,
+					"error", err,
+				)
+			}
+
+			metadataFileName := backup.FileName + ".metadata"
+			if err := staleStorage.DeleteFile(c.fieldEncryptor, metadataFileName); err != nil {
+				c.logger.Error(
+					"Failed to delete stale basebackup metadata file",
+					"backupId", backup.ID,
+					"fileName", metadataFileName,
+					"error", err,
+				)
+			}
+		}
+
 		failMsg := "basebackup finalization timed out after 10 minutes"
 		backup.Status = backups_core.BackupStatusFailed
 		backup.FailMessage = &failMsg
@@ -127,7 +156,7 @@ func (c *BackupCleaner) cleanStaleUploadedBasebackups() error {
 		}
 
 		c.logger.Info(
-			"Marked stale uploaded basebackup as failed",
+			"Marked stale uploaded basebackup as failed and cleaned storage",
 			"backupId", backup.ID,
 			"databaseId", backup.DatabaseID,
 		)

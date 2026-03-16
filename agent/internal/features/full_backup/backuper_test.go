@@ -475,6 +475,39 @@ func Test_RunFullBackup_WhenNextBackupTimeNull_BasebackupTriggered(t *testing.T)
 	assert.True(t, finalizeReceived)
 }
 
+func Test_RunFullBackup_WhenChainValidityReturns401_NoBasebackupTriggered(t *testing.T) {
+	var uploadReceived atomic.Bool
+
+	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case testChainValidPath:
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"invalid token"}`))
+		case testFullStartPath:
+			uploadReceived.Store(true)
+
+			_, _ = io.ReadAll(r.Body)
+			writeJSON(w, map[string]string{"backupId": testBackupID})
+		case testFullCompletePath:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	fb := newTestFullBackuper(server.URL)
+	fb.cmdBuilder = mockCmdBuilder(t, "data", validStderr())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go fb.Run(ctx)
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+
+	assert.False(t, uploadReceived.Load(), "should not trigger backup when API returns 401")
+}
+
 func Test_RunFullBackup_WhenUploadSucceeds_BodyIsZstdCompressed(t *testing.T) {
 	var mu sync.Mutex
 	var receivedBody []byte

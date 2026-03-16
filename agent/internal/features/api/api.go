@@ -68,11 +68,15 @@ func NewClient(host, token string, log *slog.Logger) *Client {
 func (c *Client) CheckWalChainValidity(ctx context.Context) (*WalChainValidityResponse, error) {
 	var resp WalChainValidityResponse
 
-	_, err := c.json.R().
+	httpResp, err := c.json.R().
 		SetContext(ctx).
 		SetResult(&resp).
 		Get(c.buildURL(chainValidPath))
 	if err != nil {
+		return nil, err
+	}
+
+	if err := c.checkResponse(httpResp, "check WAL chain validity"); err != nil {
 		return nil, err
 	}
 
@@ -82,7 +86,7 @@ func (c *Client) CheckWalChainValidity(ctx context.Context) (*WalChainValidityRe
 func (c *Client) GetNextFullBackupTime(ctx context.Context) (*NextFullBackupTimeResponse, error) {
 	var resp NextFullBackupTimeResponse
 
-	_, err := c.json.R().
+	httpResp, err := c.json.R().
 		SetContext(ctx).
 		SetResult(&resp).
 		Get(c.buildURL(nextBackupTimePath))
@@ -90,16 +94,23 @@ func (c *Client) GetNextFullBackupTime(ctx context.Context) (*NextFullBackupTime
 		return nil, err
 	}
 
+	if err := c.checkResponse(httpResp, "get next full backup time"); err != nil {
+		return nil, err
+	}
+
 	return &resp, nil
 }
 
 func (c *Client) ReportBackupError(ctx context.Context, errMsg string) error {
-	_, err := c.json.R().
+	httpResp, err := c.json.R().
 		SetContext(ctx).
 		SetBody(reportErrorRequest{Error: errMsg}).
 		Post(c.buildURL(reportErrorPath))
+	if err != nil {
+		return err
+	}
 
-	return err
+	return c.checkResponse(httpResp, "report backup error")
 }
 
 func (c *Client) UploadBasebackup(
@@ -223,11 +234,15 @@ func (c *Client) UploadWalSegment(
 func (c *Client) FetchServerVersion(ctx context.Context) (string, error) {
 	var ver versionResponse
 
-	_, err := c.json.R().
+	httpResp, err := c.json.R().
 		SetContext(ctx).
 		SetResult(&ver).
 		Get(c.buildURL(versionPath))
 	if err != nil {
+		return "", err
+	}
+
+	if err := c.checkResponse(httpResp, "fetch server version"); err != nil {
 		return "", err
 	}
 
@@ -262,4 +277,12 @@ func (c *Client) DownloadAgentBinary(ctx context.Context, arch, destPath string)
 
 func (c *Client) buildURL(path string) string {
 	return c.host + path
+}
+
+func (c *Client) checkResponse(resp *resty.Response, method string) error {
+	if resp.StatusCode() >= 400 {
+		return fmt.Errorf("%s: server returned status %d: %s", method, resp.StatusCode(), resp.String())
+	}
+
+	return nil
 }

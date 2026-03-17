@@ -142,7 +142,7 @@ func Test_LoadFromJSONAndArgs_PgFieldsLoadedFromJSON(t *testing.T) {
 		PgType:                 "docker",
 		PgHostBinDir:           "/usr/bin",
 		PgDockerContainerName:  "pg-container",
-		WalDir:                 "/opt/wal",
+		PgWalDir:               "/opt/wal",
 		IsDeleteWalAfterUpload: &deleteWal,
 	})
 
@@ -157,7 +157,7 @@ func Test_LoadFromJSONAndArgs_PgFieldsLoadedFromJSON(t *testing.T) {
 	assert.Equal(t, "docker", cfg.PgType)
 	assert.Equal(t, "/usr/bin", cfg.PgHostBinDir)
 	assert.Equal(t, "pg-container", cfg.PgDockerContainerName)
-	assert.Equal(t, "/opt/wal", cfg.WalDir)
+	assert.Equal(t, "/opt/wal", cfg.PgWalDir)
 	assert.Equal(t, false, *cfg.IsDeleteWalAfterUpload)
 }
 
@@ -174,7 +174,7 @@ func Test_LoadFromJSONAndArgs_PgFieldsLoadedFromArgs(t *testing.T) {
 		"--pg-type", "docker",
 		"--pg-host-bin-dir", "/custom/bin",
 		"--pg-docker-container-name", "my-pg",
-		"--wal-dir", "/var/wal",
+		"--pg-wal-dir", "/var/wal",
 	})
 
 	assert.Equal(t, "arg-pg-host", cfg.PgHost)
@@ -184,17 +184,17 @@ func Test_LoadFromJSONAndArgs_PgFieldsLoadedFromArgs(t *testing.T) {
 	assert.Equal(t, "docker", cfg.PgType)
 	assert.Equal(t, "/custom/bin", cfg.PgHostBinDir)
 	assert.Equal(t, "my-pg", cfg.PgDockerContainerName)
-	assert.Equal(t, "/var/wal", cfg.WalDir)
+	assert.Equal(t, "/var/wal", cfg.PgWalDir)
 }
 
 func Test_LoadFromJSONAndArgs_PgArgsOverrideJSON(t *testing.T) {
 	dir := setupTempDir(t)
 	writeConfigJSON(t, dir, Config{
-		PgHost: "json-host",
-		PgPort: 5432,
-		PgUser: "json-user",
-		PgType: "host",
-		WalDir: "/json/wal",
+		PgHost:   "json-host",
+		PgPort:   5432,
+		PgUser:   "json-user",
+		PgType:   "host",
+		PgWalDir: "/json/wal",
 	})
 
 	cfg := &Config{}
@@ -205,7 +205,7 @@ func Test_LoadFromJSONAndArgs_PgArgsOverrideJSON(t *testing.T) {
 		"--pg-user", "arg-user",
 		"--pg-type", "docker",
 		"--pg-docker-container-name", "my-container",
-		"--wal-dir", "/arg/wal",
+		"--pg-wal-dir", "/arg/wal",
 	})
 
 	assert.Equal(t, "arg-host", cfg.PgHost)
@@ -213,7 +213,7 @@ func Test_LoadFromJSONAndArgs_PgArgsOverrideJSON(t *testing.T) {
 	assert.Equal(t, "arg-user", cfg.PgUser)
 	assert.Equal(t, "docker", cfg.PgType)
 	assert.Equal(t, "my-container", cfg.PgDockerContainerName)
-	assert.Equal(t, "/arg/wal", cfg.WalDir)
+	assert.Equal(t, "/arg/wal", cfg.PgWalDir)
 }
 
 func Test_LoadFromJSONAndArgs_DefaultsApplied_WhenNoJSONAndNoArgs(t *testing.T) {
@@ -244,7 +244,7 @@ func Test_SaveToJSON_PgFieldsSavedCorrectly(t *testing.T) {
 		PgType:                 "docker",
 		PgHostBinDir:           "/usr/bin",
 		PgDockerContainerName:  "pg-container",
-		WalDir:                 "/opt/wal",
+		PgWalDir:               "/opt/wal",
 		IsDeleteWalAfterUpload: &deleteWal,
 	}
 
@@ -260,7 +260,7 @@ func Test_SaveToJSON_PgFieldsSavedCorrectly(t *testing.T) {
 	assert.Equal(t, "docker", saved.PgType)
 	assert.Equal(t, "/usr/bin", saved.PgHostBinDir)
 	assert.Equal(t, "pg-container", saved.PgDockerContainerName)
-	assert.Equal(t, "/opt/wal", saved.WalDir)
+	assert.Equal(t, "/opt/wal", saved.PgWalDir)
 	require.NotNil(t, saved.IsDeleteWalAfterUpload)
 	assert.Equal(t, false, *saved.IsDeleteWalAfterUpload)
 }

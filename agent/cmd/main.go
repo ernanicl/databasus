@@ -1,14 +1,17 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"databasus-agent/internal/config"
+	"databasus-agent/internal/features/api"
 	"databasus-agent/internal/features/start"
 	"databasus-agent/internal/features/upgrade"
 	"databasus-agent/internal/logger"
@@ -25,6 +28,8 @@ func main() {
 	switch os.Args[1] {
 	case "start":
 		runStart(os.Args[2:])
+	case "_run":
+		runDaemon(os.Args[2:])
 	case "stop":
 		runStop()
 	case "status":
@@ -43,7 +48,6 @@ func main() {
 func runStart(args []string) {
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
 
-	isDebug := fs.Bool("debug", false, "Enable debug logging")
 	isSkipUpdate := fs.Bool("skip-update", false, "Skip auto-update check")
 
 	cfg := &config.Config{}
@@ -53,26 +57,59 @@ func runStart(args []string) {
 		fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
 	}
 
-	logger.Init(*isDebug)
 	log := logger.GetLogger()
 
 	isDev := checkIsDevelopment()
 	runUpdateCheck(cfg.DatabasusHost, *isSkipUpdate, isDev, log)
 
-	if err := start.Run(cfg, log); err != nil {
+	if err := start.Start(cfg, Version, isDev, log); err != nil {
+		if errors.Is(err, upgrade.ErrUpgradeRestart) {
+			reexecAfterUpgrade(log)
+		}
+
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+func runDaemon(args []string) {
+	fs := flag.NewFlagSet("_run", flag.ExitOnError)
+
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	log := logger.GetLogger()
+
+	cfg := &config.Config{}
+	cfg.LoadFromJSON()
+
+	if err := start.RunDaemon(cfg, Version, checkIsDevelopment(), log); err != nil {
+		if errors.Is(err, upgrade.ErrUpgradeRestart) {
+			reexecAfterUpgrade(log)
+		}
+
+		log.Error("Agent exited with error", "error", err)
+		os.Exit(1)
+	}
+}
+
 func runStop() {
-	logger.Init(false)
-	logger.GetLogger().Info("stop: stub — not yet implemented")
+	log := logger.GetLogger()
+
+	if err := start.Stop(log); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func runStatus() {
-	logger.Init(false)
-	logger.GetLogger().Info("status: stub — not yet implemented")
+	log := logger.GetLogger()
+
+	if err := start.Status(log); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func runRestore(args []string) {
@@ -82,7 +119,6 @@ func runRestore(args []string) {
 	backupID := fs.String("backup-id", "", "Full backup UUID (optional)")
 	targetTime := fs.String("target-time", "", "PITR target time in RFC3339 (optional)")
 	isYes := fs.Bool("yes", false, "Skip confirmation prompt")
-	isDebug := fs.Bool("debug", false, "Enable debug logging")
 	isSkipUpdate := fs.Bool("skip-update", false, "Skip auto-update check")
 
 	cfg := &config.Config{}
@@ -92,7 +128,6 @@ func runRestore(args []string) {
 		fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
 	}
 
-	logger.Init(*isDebug)
 	log := logger.GetLogger()
 
 	isDev := checkIsDevelopment()
@@ -126,9 +161,16 @@ func runUpdateCheck(host string, isSkipUpdate, isDev bool, log *slog.Logger) {
 		return
 	}
 
-	if err := upgrade.CheckAndUpdate(host, Version, isDev, log); err != nil {
+	apiClient := api.NewClient(host, "", log)
+
+	isUpgraded, err := upgrade.CheckAndUpdate(apiClient, Version, isDev, log)
+	if err != nil {
 		log.Error("Auto-update failed", "error", err)
 		os.Exit(1)
+	}
+
+	if isUpgraded {
+		reexecAfterUpgrade(log)
 	}
 }
 
@@ -167,4 +209,19 @@ func parseEnvMode(data []byte) bool {
 	}
 
 	return false
+}
+
+func reexecAfterUpgrade(log *slog.Logger) {
+	selfPath, err := os.Executable()
+	if err != nil {
+		log.Error("Failed to resolve executable for re-exec", "error", err)
+		os.Exit(1)
+	}
+
+	log.Info("Re-executing after upgrade...")
+
+	if err := syscall.Exec(selfPath, os.Args, os.Environ()); err != nil {
+		log.Error("Failed to re-exec after upgrade", "error", err)
+		os.Exit(1)
+	}
 }

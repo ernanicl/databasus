@@ -44,10 +44,10 @@ type ReportErrorRequest struct {
 	Error string `json:"error" binding:"required"`
 }
 
-type UploadGapResponse struct {
-	Error               string `json:"error"`
-	ExpectedSegmentName string `json:"expectedSegmentName"`
-	ReceivedSegmentName string `json:"receivedSegmentName"`
+type IsWalChainValidResponse struct {
+	IsValid               bool   `json:"isValid"`
+	Error                 string `json:"error,omitempty"`
+	LastContiguousSegment string `json:"lastContiguousSegment,omitempty"`
 }
 
 type RestorePlanFullBackup struct {
@@ -76,4 +76,15 @@ type GetRestorePlanResponse struct {
 	WalSegments            []RestorePlanWalSegment `json:"walSegments"`
 	TotalSizeBytes         int64                   `json:"totalSizeBytes"`
 	LatestAvailableSegment string                  `json:"latestAvailableSegment"`
+}
+
+type UploadBasebackupResponse struct {
+	BackupID uuid.UUID `json:"backupId"`
+}
+
+type FinalizeBasebackupRequest struct {
+	BackupID     uuid.UUID `json:"backupId"     binding:"required"`
+	StartSegment string    `json:"startSegment" binding:"required"`
+	StopSegment  string    `json:"stopSegment"  binding:"required"`
+	Error        *string   `json:"error"`
 }

@@ -11,7 +11,7 @@ type parsedFlags struct {
 	pgType                *string
 	pgHostBinDir          *string
 	pgDockerContainerName *string
-	walDir                *string
+	pgWalDir              *string
 
 	sources map[string]string
 }

@@ -30,75 +30,46 @@ type PostgreWalBackupService struct {
 	backupService       *BackupService
 }
 
-// UploadWal accepts a streaming WAL segment or basebackup upload from the agent.
-// For WAL segments it validates the WAL chain before accepting. Returns an UploadGapResponse
-// (409) when the chain is broken so the agent knows to trigger a full basebackup.
-func (s *PostgreWalBackupService) UploadWal(
+// UploadWalSegment accepts a streaming WAL segment upload from the agent.
+// WAL segments are accepted unconditionally.
+func (s *PostgreWalBackupService) UploadWalSegment(
 	ctx context.Context,
 	database *databases.Database,
-	uploadType backups_core.PgWalUploadType,
 	walSegmentName string,
-	fullBackupWalStartSegment string,
-	fullBackupWalStopSegment string,
-	walSegmentSizeBytes int64,
 	body io.Reader,
-) (*backups_dto.UploadGapResponse, error) {
+) error {
 	if err := s.validateWalBackupType(database); err != nil {
-		return nil, err
-	}
-
-	if uploadType == backups_core.PgWalUploadTypeBasebackup {
-		if fullBackupWalStartSegment == "" || fullBackupWalStopSegment == "" {
-			return nil, fmt.Errorf(
-				"fullBackupWalStartSegment and fullBackupWalStopSegment are required for basebackup uploads",
-			)
-		}
+		return err
 	}
 
 	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(database.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get backup config: %w", err)
+		return fmt.Errorf("failed to get backup config: %w", err)
 	}
 
 	if backupConfig.Storage == nil {
-		return nil, fmt.Errorf("no storage configured for database %s", database.ID)
+		return fmt.Errorf("no storage configured for database %s", database.ID)
 	}
 
-	if uploadType == backups_core.PgWalUploadTypeWal {
-		// Idempotency: check before chain validation so a successful re-upload is
-		// not misidentified as a gap.
-		existing, err := s.backupRepository.FindWalSegmentByName(database.ID, walSegmentName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check for duplicate WAL segment: %w", err)
-		}
-
-		if existing != nil {
-			return nil, nil
-		}
-
-		gapResp, err := s.validateWalChain(database.ID, walSegmentName, walSegmentSizeBytes)
-		if err != nil {
-			return nil, err
-		}
-
-		if gapResp != nil {
-			return gapResp, nil
-		}
+	existing, err := s.backupRepository.FindWalSegmentByName(database.ID, walSegmentName)
+	if err != nil {
+		return fmt.Errorf("failed to check for duplicate WAL segment: %w", err)
 	}
 
-	backup := s.createBackupRecord(
+	if existing != nil {
+		return nil
+	}
+
+	backup := s.createWalSegmentRecord(
 		database.ID,
 		backupConfig.Storage.ID,
-		uploadType,
 		database.Name,
 		walSegmentName,
-		fullBackupWalStartSegment,
-		fullBackupWalStopSegment,
 		backupConfig.Encryption,
 	)
 
 	if err := s.backupRepository.Save(backup); err != nil {
-		return nil, fmt.Errorf("failed to create backup record: %w", err)
+		return fmt.Errorf("failed to create backup record: %w", err)
 	}
 
 	sizeBytes, streamErr := s.streamToStorage(ctx, backup, backupConfig, body)
@@ -106,12 +77,106 @@ func (s *PostgreWalBackupService) UploadWal(
 		errMsg := streamErr.Error()
 		s.markFailed(backup, errMsg)
 
-		return nil, fmt.Errorf("upload failed: %w", streamErr)
+		return fmt.Errorf("upload failed: %w", streamErr)
 	}
 
 	s.markCompleted(backup, sizeBytes)
 
-	return nil, nil
+	return nil
+}
+
+// UploadBasebackup accepts a streaming basebackup upload from the agent (Phase 1).
+// The backup stays IN_PROGRESS with UploadCompletedAt set after streaming finishes.
+// The agent must call FinalizeBasebackup (Phase 2) with WAL segment names to complete.
+func (s *PostgreWalBackupService) UploadBasebackup(
+	ctx context.Context,
+	database *databases.Database,
+	body io.Reader,
+) (uuid.UUID, error) {
+	if err := s.validateWalBackupType(database); err != nil {
+		return uuid.Nil, err
+	}
+
+	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(database.ID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to get backup config: %w", err)
+	}
+
+	if backupConfig.Storage == nil {
+		return uuid.Nil, fmt.Errorf("no storage configured for database %s", database.ID)
+	}
+
+	backup := s.createBasebackupRecord(
+		database.ID,
+		backupConfig.Storage.ID,
+		database.Name,
+		backupConfig.Encryption,
+	)
+
+	if err := s.backupRepository.Save(backup); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to create backup record: %w", err)
+	}
+
+	sizeBytes, streamErr := s.streamToStorage(ctx, backup, backupConfig, body)
+	if streamErr != nil {
+		errMsg := streamErr.Error()
+		s.markFailed(backup, errMsg)
+
+		return uuid.Nil, fmt.Errorf("upload failed: %w", streamErr)
+	}
+
+	now := time.Now().UTC()
+	backup.UploadCompletedAt = &now
+	backup.BackupSizeMb = float64(sizeBytes) / (1024 * 1024)
+
+	if err := s.backupRepository.Save(backup); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to update backup after upload: %w", err)
+	}
+
+	return backup.ID, nil
+}
+
+// FinalizeBasebackup completes a previously uploaded basebackup (Phase 2).
+// Sets WAL segment names and marks the backup as COMPLETED, or marks it FAILED if errorMsg is provided.
+func (s *PostgreWalBackupService) FinalizeBasebackup(
+	database *databases.Database,
+	backupID uuid.UUID,
+	startSegment string,
+	stopSegment string,
+	errorMsg *string,
+) error {
+	if err := s.validateWalBackupType(database); err != nil {
+		return err
+	}
+
+	backup, err := s.backupRepository.FindByID(backupID)
+	if err != nil {
+		return fmt.Errorf("backup not found: %w", err)
+	}
+
+	if backup.DatabaseID != database.ID {
+		return fmt.Errorf("backup does not belong to this database")
+	}
+
+	if backup.Status != backups_core.BackupStatusInProgress || backup.UploadCompletedAt == nil {
+		return fmt.Errorf("backup is not awaiting finalization")
+	}
+
+	if errorMsg != nil {
+		s.markFailed(backup, *errorMsg)
+
+		return nil
+	}
+
+	backup.PgFullBackupWalStartSegmentName = &startSegment
+	backup.PgFullBackupWalStopSegmentName = &stopSegment
+	backup.Status = backups_core.BackupStatusCompleted
+
+	if err := s.backupRepository.Save(backup); err != nil {
+		return fmt.Errorf("failed to finalize backup: %w", err)
+	}
+
+	return nil
 }
 
 func (s *PostgreWalBackupService) GetRestorePlan(
@@ -299,96 +364,96 @@ func (s *PostgreWalBackupService) ReportError(
 	return nil
 }
 
-func (s *PostgreWalBackupService) validateWalChain(
-	databaseID uuid.UUID,
-	incomingSegment string,
-	walSegmentSizeBytes int64,
-) (*backups_dto.UploadGapResponse, error) {
-	fullBackup, err := s.backupRepository.FindLastCompletedFullWalBackupByDatabaseID(databaseID)
+// IsWalChainValid checks whether the WAL chain is continuous since the last completed full backup.
+func (s *PostgreWalBackupService) IsWalChainValid(
+	database *databases.Database,
+) (*backups_dto.IsWalChainValidResponse, error) {
+	if err := s.validateWalBackupType(database); err != nil {
+		return nil, err
+	}
+
+	fullBackup, err := s.backupRepository.FindLastCompletedFullWalBackupByDatabaseID(database.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query full backup: %w", err)
 	}
 
-	// No full backup exists yet: cannot accept WAL segments without a chain anchor.
 	if fullBackup == nil || fullBackup.PgFullBackupWalStopSegmentName == nil {
-		return &backups_dto.UploadGapResponse{
-			Error:               "no_full_backup",
-			ExpectedSegmentName: "",
-			ReceivedSegmentName: incomingSegment,
+		return &backups_dto.IsWalChainValidResponse{
+			IsValid: false,
+			Error:   "no_full_backup",
 		}, nil
 	}
 
-	stopSegment := *fullBackup.PgFullBackupWalStopSegmentName
+	startSegment := ""
+	if fullBackup.PgFullBackupWalStartSegmentName != nil {
+		startSegment = *fullBackup.PgFullBackupWalStartSegmentName
+	}
 
-	lastWal, err := s.backupRepository.FindLastWalSegmentAfter(databaseID, stopSegment)
+	walSegments, err := s.backupRepository.FindCompletedWalSegmentsAfter(database.ID, startSegment)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query last WAL segment: %w", err)
+		return nil, fmt.Errorf("failed to query WAL segments: %w", err)
 	}
 
-	walCalculator := util_wal.NewWalCalculator(walSegmentSizeBytes)
-
-	var chainTail string
-	if lastWal != nil && lastWal.PgWalSegmentName != nil {
-		chainTail = *lastWal.PgWalSegmentName
-	} else {
-		chainTail = stopSegment
-	}
-
-	expectedNext, err := walCalculator.NextSegment(chainTail)
-	if err != nil {
-		return nil, fmt.Errorf("WAL arithmetic failed for %q: %w", chainTail, err)
-	}
-
-	if incomingSegment != expectedNext {
-		return &backups_dto.UploadGapResponse{
-			Error:               "gap_detected",
-			ExpectedSegmentName: expectedNext,
-			ReceivedSegmentName: incomingSegment,
+	chainErr := s.validateRestoreWalChain(fullBackup, walSegments)
+	if chainErr != nil {
+		return &backups_dto.IsWalChainValidResponse{
+			IsValid:               false,
+			Error:                 chainErr.Error,
+			LastContiguousSegment: chainErr.LastContiguousSegment,
 		}, nil
 	}
 
-	return nil, nil
+	return &backups_dto.IsWalChainValidResponse{
+		IsValid: true,
+	}, nil
 }
 
-func (s *PostgreWalBackupService) createBackupRecord(
+func (s *PostgreWalBackupService) createBasebackupRecord(
 	databaseID uuid.UUID,
 	storageID uuid.UUID,
-	uploadType backups_core.PgWalUploadType,
 	dbName string,
-	walSegmentName string,
-	fullBackupWalStartSegment string,
-	fullBackupWalStopSegment string,
 	encryption backups_config.BackupEncryption,
 ) *backups_core.Backup {
 	now := time.Now().UTC()
+	walBackupType := backups_core.PgWalBackupTypeFullBackup
 
 	backup := &backups_core.Backup{
-		ID:         uuid.New(),
-		DatabaseID: databaseID,
-		StorageID:  storageID,
-		Status:     backups_core.BackupStatusInProgress,
-		Encryption: encryption,
-		CreatedAt:  now,
+		ID:              uuid.New(),
+		DatabaseID:      databaseID,
+		StorageID:       storageID,
+		Status:          backups_core.BackupStatusInProgress,
+		PgWalBackupType: &walBackupType,
+		Encryption:      encryption,
+		CreatedAt:       now,
 	}
 
 	backup.GenerateFilename(dbName)
 
-	if uploadType == backups_core.PgWalUploadTypeBasebackup {
-		walBackupType := backups_core.PgWalBackupTypeFullBackup
-		backup.PgWalBackupType = &walBackupType
+	return backup
+}
 
-		if fullBackupWalStartSegment != "" {
-			backup.PgFullBackupWalStartSegmentName = &fullBackupWalStartSegment
-		}
+func (s *PostgreWalBackupService) createWalSegmentRecord(
+	databaseID uuid.UUID,
+	storageID uuid.UUID,
+	dbName string,
+	walSegmentName string,
+	encryption backups_config.BackupEncryption,
+) *backups_core.Backup {
+	now := time.Now().UTC()
+	walBackupType := backups_core.PgWalBackupTypeWalSegment
 
-		if fullBackupWalStopSegment != "" {
-			backup.PgFullBackupWalStopSegmentName = &fullBackupWalStopSegment
-		}
-	} else {
-		walBackupType := backups_core.PgWalBackupTypeWalSegment
-		backup.PgWalBackupType = &walBackupType
-		backup.PgWalSegmentName = &walSegmentName
+	backup := &backups_core.Backup{
+		ID:               uuid.New(),
+		DatabaseID:       databaseID,
+		StorageID:        storageID,
+		Status:           backups_core.BackupStatusInProgress,
+		PgWalBackupType:  &walBackupType,
+		PgWalSegmentName: &walSegmentName,
+		Encryption:       encryption,
+		CreatedAt:        now,
 	}
+
+	backup.GenerateFilename(dbName)
 
 	return backup
 }

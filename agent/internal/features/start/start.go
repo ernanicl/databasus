@@ -5,22 +5,32 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"databasus-agent/internal/config"
+	"databasus-agent/internal/features/api"
+	full_backup "databasus-agent/internal/features/full_backup"
+	"databasus-agent/internal/features/upgrade"
+	"databasus-agent/internal/features/wal"
 )
 
 const (
 	pgBasebackupVerifyTimeout = 10 * time.Second
 	dbVerifyTimeout           = 10 * time.Second
+	minPgMajorVersion         = 15
 )
 
-func Run(cfg *config.Config, log *slog.Logger) error {
+func Start(cfg *config.Config, agentVersion string, isDev bool, log *slog.Logger) error {
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
@@ -33,10 +43,59 @@ func Run(cfg *config.Config, log *slog.Logger) error {
 		return err
 	}
 
-	log.Info("start: stub — not yet implemented",
-		"dbId", cfg.DbID,
-		"hasToken", cfg.Token != "",
-	)
+	if runtime.GOOS == "windows" {
+		return RunDaemon(cfg, agentVersion, isDev, log)
+	}
+
+	pid, err := spawnDaemon(log)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Agent started in background (PID %d)\n", pid)
+
+	return nil
+}
+
+func RunDaemon(cfg *config.Config, agentVersion string, isDev bool, log *slog.Logger) error {
+	lockFile, err := AcquireLock(log)
+	if err != nil {
+		return err
+	}
+	defer ReleaseLock(lockFile)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	watcher, err := NewLockWatcher(lockFile, cancel, log)
+	if err != nil {
+		return fmt.Errorf("failed to initialize lock watcher: %w", err)
+	}
+	go watcher.Run(ctx)
+
+	apiClient := api.NewClient(cfg.DatabasusHost, cfg.Token, log)
+
+	var backgroundUpgrader *upgrade.BackgroundUpgrader
+	if agentVersion != "dev" && runtime.GOOS != "windows" {
+		backgroundUpgrader = upgrade.NewBackgroundUpgrader(apiClient, agentVersion, isDev, cancel, log)
+		go backgroundUpgrader.Run(ctx)
+	}
+
+	fullBackuper := full_backup.NewFullBackuper(cfg, apiClient, log)
+	go fullBackuper.Run(ctx)
+
+	streamer := wal.NewStreamer(cfg, apiClient, log)
+	streamer.Run(ctx)
+
+	if backgroundUpgrader != nil {
+		backgroundUpgrader.WaitForCompletion(30 * time.Second)
+
+		if backgroundUpgrader.IsUpgraded() {
+			return upgrade.ErrUpgradeRestart
+		}
+	}
+
+	log.Info("Agent stopped")
 
 	return nil
 }
@@ -70,8 +129,8 @@ func validateConfig(cfg *config.Config) error {
 		return fmt.Errorf("argument pg-type must be 'host' or 'docker', got '%s'", cfg.PgType)
 	}
 
-	if cfg.WalDir == "" {
-		return errors.New("argument wal-dir is required")
+	if cfg.PgWalDir == "" {
+		return errors.New("argument pg-wal-dir is required")
 	}
 
 	if cfg.PgType == "docker" && cfg.PgDockerContainerName == "" {
@@ -169,11 +228,44 @@ func verifyDatabase(cfg *config.Config, log *slog.Logger) error {
 		)
 	}
 
+	var versionNumStr string
+	if err := conn.QueryRow(ctx, "SHOW server_version_num").Scan(&versionNumStr); err != nil {
+		return fmt.Errorf("failed to query PostgreSQL version: %w", err)
+	}
+
+	majorVersion, err := parsePgVersionNum(versionNumStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse PostgreSQL version '%s': %w", versionNumStr, err)
+	}
+
+	if majorVersion < minPgMajorVersion {
+		return fmt.Errorf(
+			"PostgreSQL %d is not supported, minimum required version is %d",
+			majorVersion, minPgMajorVersion,
+		)
+	}
+
 	log.Info("PostgreSQL connection verified",
 		"host", cfg.PgHost,
 		"port", cfg.PgPort,
 		"user", cfg.PgUser,
+		"version", majorVersion,
 	)
 
 	return nil
+}
+
+func parsePgVersionNum(versionNumStr string) (int, error) {
+	versionNum, err := strconv.Atoi(strings.TrimSpace(versionNumStr))
+	if err != nil {
+		return 0, fmt.Errorf("invalid version number: %w", err)
+	}
+
+	if versionNum <= 0 {
+		return 0, fmt.Errorf("invalid version number: %d", versionNum)
+	}
+
+	majorVersion := versionNum / 10000
+
+	return majorVersion, nil
 }

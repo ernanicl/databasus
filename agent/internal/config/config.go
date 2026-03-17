@@ -24,7 +24,7 @@ type Config struct {
 	PgType                 string `json:"pgType"`
 	PgHostBinDir           string `json:"pgHostBinDir"`
 	PgDockerContainerName  string `json:"pgDockerContainerName"`
-	WalDir                 string `json:"walDir"`
+	PgWalDir               string `json:"pgWalDir"`
 	IsDeleteWalAfterUpload *bool  `json:"deleteWalAfterUpload"`
 
 	flags parsedFlags
@@ -51,7 +51,7 @@ func (c *Config) LoadFromJSONAndArgs(fs *flag.FlagSet, args []string) {
 	c.flags.pgType = fs.String("pg-type", "", "PostgreSQL type: host or docker")
 	c.flags.pgHostBinDir = fs.String("pg-host-bin-dir", "", "Path to PG bin directory (host mode)")
 	c.flags.pgDockerContainerName = fs.String("pg-docker-container-name", "", "Docker container name (docker mode)")
-	c.flags.walDir = fs.String("wal-dir", "", "Path to WAL queue directory")
+	c.flags.pgWalDir = fs.String("pg-wal-dir", "", "Path to WAL queue directory")
 
 	if err := fs.Parse(args); err != nil {
 		os.Exit(1)
@@ -71,6 +71,11 @@ func (c *Config) SaveToJSON() error {
 	}
 
 	return os.WriteFile(configFileName, data, 0o644)
+}
+
+func (c *Config) LoadFromJSON() {
+	c.loadFromJSON()
+	c.applyDefaults()
 }
 
 func (c *Config) loadFromJSON() {
@@ -122,7 +127,7 @@ func (c *Config) initSources() {
 		"pg-type":                  "not configured",
 		"pg-host-bin-dir":          "not configured",
 		"pg-docker-container-name": "not configured",
-		"wal-dir":                  "not configured",
+		"pg-wal-dir":               "not configured",
 		"delete-wal-after-upload":  "not configured",
 	}
 
@@ -164,8 +169,8 @@ func (c *Config) initSources() {
 		c.flags.sources["pg-docker-container-name"] = configFileName
 	}
 
-	if c.WalDir != "" {
-		c.flags.sources["wal-dir"] = configFileName
+	if c.PgWalDir != "" {
+		c.flags.sources["pg-wal-dir"] = configFileName
 	}
 
 	// IsDeleteWalAfterUpload always has a value after applyDefaults
@@ -223,9 +228,9 @@ func (c *Config) applyFlags() {
 		c.flags.sources["pg-docker-container-name"] = "command line args"
 	}
 
-	if c.flags.walDir != nil && *c.flags.walDir != "" {
-		c.WalDir = *c.flags.walDir
-		c.flags.sources["wal-dir"] = "command line args"
+	if c.flags.pgWalDir != nil && *c.flags.pgWalDir != "" {
+		c.PgWalDir = *c.flags.pgWalDir
+		c.flags.sources["pg-wal-dir"] = "command line args"
 	}
 }
 
@@ -246,7 +251,7 @@ func (c *Config) logConfigSources() {
 		"source",
 		c.flags.sources["pg-docker-container-name"],
 	)
-	log.Info("wal-dir", "value", c.WalDir, "source", c.flags.sources["wal-dir"])
+	log.Info("pg-wal-dir", "value", c.PgWalDir, "source", c.flags.sources["pg-wal-dir"])
 	log.Info(
 		"delete-wal-after-upload",
 		"value",

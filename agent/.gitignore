@@ -22,3 +22,5 @@ temp/
 valkey-data/
 victoria-logs-data/
 databasus.json
+.test-tmp/
+databasus.log

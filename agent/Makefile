@@ -1,6 +1,6 @@
 .PHONY: run build test lint e2e e2e-clean e2e-backup-restore e2e-backup-restore-clean
 
-include .env
+-include .env
 export
 
 run:

@@ -9,6 +9,7 @@ on:
 
 jobs:
   lint-backend:
+    if: github.ref != 'refs/heads/develop'
     runs-on: self-hosted
     container:
       image: golang:1.26.1
@@ -55,6 +56,7 @@ jobs:
           git diff --exit-code go.mod go.sum || (echo "go mod tidy made changes, please run 'go mod tidy' and commit the changes" && exit 1)
 
   lint-frontend:
+    if: github.ref != 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -87,6 +89,7 @@ jobs:
           npm run build
 
   lint-agent:
+    if: github.ref != 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -120,6 +123,7 @@ jobs:
           git diff --exit-code go.mod go.sum || (echo "go mod tidy made changes, please run 'go mod tidy' and commit the changes" && exit 1)
 
   test-frontend:
+    if: github.ref != 'refs/heads/develop'
     runs-on: ubuntu-latest
     needs: [lint-frontend]
     steps:
@@ -142,6 +146,7 @@ jobs:
           npm run test
 
   test-agent:
+    if: github.ref != 'refs/heads/develop'
     runs-on: ubuntu-latest
     needs: [lint-agent]
     steps:
@@ -165,6 +170,7 @@ jobs:
           go test -count=1 -failfast ./internal/...
 
   e2e-agent:
+    if: github.ref != 'refs/heads/develop'
     runs-on: ubuntu-latest
     needs: [lint-agent]
     steps:
@@ -183,9 +189,34 @@ jobs:
           docker compose down -v --rmi local || true
           rm -rf artifacts || true
 
+  e2e-agent-backup-restore:
+    if: github.ref != 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    needs: [lint-agent]
+    strategy:
+      matrix:
+        pg_version: [15, 16, 17, 18]
+      fail-fast: false
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Run backup-restore e2e (PG ${{ matrix.pg_version }})
+        run: |
+          cd agent
+          make e2e-backup-restore PG_VERSION=${{ matrix.pg_version }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd agent/e2e
+          docker compose -f docker-compose.backup-restore.yml down -v --rmi local || true
+          rm -rf artifacts || true
+
   # Self-hosted: performant high-frequency CPU is used to start many containers and run tests fast. Tests
   # step is bottle-neck, because we need a lot of containers and cannot parallelize tests due to shared resources
   test-backend:
+    if: github.ref != 'refs/heads/develop'
     runs-on: self-hosted
     needs: [lint-backend]
     container:
@@ -514,11 +545,47 @@ jobs:
 
           echo "Cleanup complete"
 
+  build-and-push-dev:
+    runs-on: self-hosted
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+    steps:
+      - name: Clean workspace
+        run: |
+          sudo rm -rf "$GITHUB_WORKSPACE"/* || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/.* || true
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (enables multi-arch emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push dev image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            APP_VERSION=dev-${{ github.sha }}
+          tags: |
+            databasus/databasus-dev:latest
+            databasus/databasus-dev:${{ github.sha }}
+
   determine-version:
     runs-on: self-hosted
     container:
       image: node:20
-    needs: [test-backend, test-frontend, test-agent, e2e-agent]
+    needs: [test-backend, test-frontend, test-agent, e2e-agent, e2e-agent-backup-restore]
     if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-release]') }}
     outputs:
       should_release: ${{ steps.version_bump.outputs.should_release }}
@@ -608,43 +675,6 @@ jobs:
             echo "should_release=false" >> $GITHUB_OUTPUT
             echo "No version bump needed"
           fi
-
-  build-only:
-    runs-on: self-hosted
-    needs: [test-backend, test-frontend, test-agent, e2e-agent]
-    if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[skip-release]') }}
-    steps:
-      - name: Clean workspace
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE"/* || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/.* || true
-
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU (enables multi-arch emulation)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push SHA-only tags
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            APP_VERSION=dev-${{ github.sha }}
-          tags: |
-            databasus/databasus:latest
-            databasus/databasus:${{ github.sha }}
 
   build-and-push:
     runs-on: self-hosted

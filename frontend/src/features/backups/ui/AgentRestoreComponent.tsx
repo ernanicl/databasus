@@ -75,6 +75,7 @@ export const AgentRestoreComponent = ({ database, backup }: Props) => {
     `  --db-id=${database.id} \\`,
     `  --token=<YOUR_AGENT_TOKEN> \\`,
     `  --backup-id=${backup.id} \\`,
+    ...(isDocker ? ['  --pg-type=docker \\'] : []),
     `  --target-dir=${targetDirPlaceholder}`,
   ].join('\n');
 
@@ -84,6 +85,7 @@ export const AgentRestoreComponent = ({ database, backup }: Props) => {
     `  --db-id=${database.id} \\`,
     `  --token=<YOUR_AGENT_TOKEN> \\`,
     `  --backup-id=${backup.id} \\`,
+    ...(isDocker ? ['  --pg-type=docker \\'] : []),
     `  --target-dir=${targetDirPlaceholder} \\`,
     `  --target-time=<RFC3339_TIMESTAMP>`,
   ].join('\n');

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -83,7 +84,7 @@ func Test_RunRestore_WhenBasebackupAndWalSegmentsAvailable_FilesExtractedAndReco
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.NoError(t, err)
@@ -149,7 +150,7 @@ func Test_RunRestore_WhenTargetTimeProvided_RecoveryTargetTimeWrittenToConfig(t 
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "2026-02-28T14:30:00Z")
+	restorer := newTestRestorer(server.URL, targetDir, "", "2026-02-28T14:30:00Z", "")
 
 	err := restorer.Run(context.Background())
 	require.NoError(t, err)
@@ -166,7 +167,7 @@ func Test_RunRestore_WhenPgDataDirNotEmpty_ReturnsError(t *testing.T) {
 	err := os.WriteFile(filepath.Join(targetDir, "existing-file"), []byte("data"), 0o644)
 	require.NoError(t, err)
 
-	restorer := newTestRestorer("http://localhost:0", targetDir, "", "")
+	restorer := newTestRestorer("http://localhost:0", targetDir, "", "", "")
 
 	err = restorer.Run(context.Background())
 	require.Error(t, err)
@@ -176,7 +177,7 @@ func Test_RunRestore_WhenPgDataDirNotEmpty_ReturnsError(t *testing.T) {
 func Test_RunRestore_WhenPgDataDirDoesNotExist_ReturnsError(t *testing.T) {
 	nonExistentDir := filepath.Join(os.TempDir(), "databasus-test-nonexistent-dir-12345")
 
-	restorer := newTestRestorer("http://localhost:0", nonExistentDir, "", "")
+	restorer := newTestRestorer("http://localhost:0", nonExistentDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.Error(t, err)
@@ -194,7 +195,7 @@ func Test_RunRestore_WhenNoBackupsAvailable_ReturnsError(t *testing.T) {
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.Error(t, err)
@@ -213,7 +214,7 @@ func Test_RunRestore_WhenWalChainBroken_ReturnsError(t *testing.T) {
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.Error(t, err)
@@ -274,7 +275,7 @@ func Test_DownloadWalSegment_WhenFirstAttemptFails_RetriesAndSucceeds(t *testing
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	origDelay := retryDelayOverride
 	testDelay := 10 * time.Millisecond
@@ -333,7 +334,7 @@ func Test_DownloadWalSegment_WhenAllAttemptsFail_ReturnsErrorWithSegmentName(t *
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	origDelay := retryDelayOverride
 	testDelay := 10 * time.Millisecond
@@ -348,7 +349,7 @@ func Test_DownloadWalSegment_WhenAllAttemptsFail_ReturnsErrorWithSegmentName(t *
 
 func Test_RunRestore_WhenInvalidTargetTimeFormat_ReturnsError(t *testing.T) {
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer("http://localhost:0", targetDir, "", "not-a-valid-time")
+	restorer := newTestRestorer("http://localhost:0", targetDir, "", "not-a-valid-time", "")
 
 	err := restorer.Run(context.Background())
 	require.Error(t, err)
@@ -381,7 +382,7 @@ func Test_RunRestore_WhenBasebackupDownloadFails_ReturnsError(t *testing.T) {
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.Error(t, err)
@@ -420,7 +421,7 @@ func Test_RunRestore_WhenNoWalSegmentsInPlan_BasebackupRestoredSuccessfully(t *t
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.NoError(t, err)
@@ -483,7 +484,7 @@ func Test_RunRestore_WhenMakingApiCalls_AuthTokenIncludedInRequests(t *testing.T
 	})
 
 	targetDir := createTestTargetDir(t)
-	restorer := newTestRestorer(server.URL, targetDir, "", "")
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "")
 
 	err := restorer.Run(context.Background())
 	require.NoError(t, err)
@@ -496,6 +497,101 @@ func Test_RunRestore_WhenMakingApiCalls_AuthTokenIncludedInRequests(t *testing.T
 	for _, headerValue := range authHeaderValues {
 		assert.Equal(t, "test-token", headerValue)
 	}
+}
+
+func Test_ConfigurePostgresRecovery_WhenPgTypeHost_UsesHostAbsolutePath(t *testing.T) {
+	tarFiles := map[string][]byte{"PG_VERSION": []byte("16")}
+	zstdTarData := createZstdTar(t, tarFiles)
+
+	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case testRestorePlanPath:
+			writeJSON(w, api.GetRestorePlanResponse{
+				FullBackup: api.RestorePlanFullBackup{
+					BackupID:  testFullBackupID,
+					PgVersion: "16",
+					CreatedAt: time.Now().UTC(),
+					SizeBytes: 1024,
+				},
+				WalSegments:            []api.RestorePlanWalSegment{},
+				TotalSizeBytes:         1024,
+				LatestAvailableSegment: "",
+			})
+
+		case testRestoreDownloadPath:
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(zstdTarData)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	targetDir := createTestTargetDir(t)
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "host")
+
+	err := restorer.Run(context.Background())
+	require.NoError(t, err)
+
+	autoConfContent, err := os.ReadFile(filepath.Join(targetDir, "postgresql.auto.conf"))
+	require.NoError(t, err)
+	autoConfStr := string(autoConfContent)
+
+	absTargetDir, _ := filepath.Abs(targetDir)
+	absTargetDir = filepath.ToSlash(absTargetDir)
+	expectedWalPath := absTargetDir + "/" + walRestoreDir
+
+	assert.Contains(t, autoConfStr, fmt.Sprintf("restore_command = 'cp %s/%%f %%p'", expectedWalPath))
+	assert.Contains(t, autoConfStr, fmt.Sprintf("recovery_end_command = 'rm -rf %s'", expectedWalPath))
+	assert.NotContains(t, autoConfStr, "/var/lib/postgresql/data")
+}
+
+func Test_ConfigurePostgresRecovery_WhenPgTypeDocker_UsesContainerPath(t *testing.T) {
+	tarFiles := map[string][]byte{"PG_VERSION": []byte("16")}
+	zstdTarData := createZstdTar(t, tarFiles)
+
+	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case testRestorePlanPath:
+			writeJSON(w, api.GetRestorePlanResponse{
+				FullBackup: api.RestorePlanFullBackup{
+					BackupID:  testFullBackupID,
+					PgVersion: "16",
+					CreatedAt: time.Now().UTC(),
+					SizeBytes: 1024,
+				},
+				WalSegments:            []api.RestorePlanWalSegment{},
+				TotalSizeBytes:         1024,
+				LatestAvailableSegment: "",
+			})
+
+		case testRestoreDownloadPath:
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(zstdTarData)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	targetDir := createTestTargetDir(t)
+	restorer := newTestRestorer(server.URL, targetDir, "", "", "docker")
+
+	err := restorer.Run(context.Background())
+	require.NoError(t, err)
+
+	autoConfContent, err := os.ReadFile(filepath.Join(targetDir, "postgresql.auto.conf"))
+	require.NoError(t, err)
+	autoConfStr := string(autoConfContent)
+
+	expectedWalPath := "/var/lib/postgresql/data/" + walRestoreDir
+
+	assert.Contains(t, autoConfStr, fmt.Sprintf("restore_command = 'cp %s/%%f %%p'", expectedWalPath))
+	assert.Contains(t, autoConfStr, fmt.Sprintf("recovery_end_command = 'rm -rf %s'", expectedWalPath))
+
+	absTargetDir, _ := filepath.Abs(targetDir)
+	absTargetDir = filepath.ToSlash(absTargetDir)
+	assert.NotContains(t, autoConfStr, absTargetDir)
 }
 
 func newTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
@@ -601,10 +697,10 @@ func createZstdData(t *testing.T, data []byte) []byte {
 	return buffer.Bytes()
 }
 
-func newTestRestorer(serverURL, targetPgDataDir, backupID, targetTime string) *Restorer {
+func newTestRestorer(serverURL, targetPgDataDir, backupID, targetTime, pgType string) *Restorer {
 	apiClient := api.NewClient(serverURL, "test-token", logger.GetLogger())
 
-	return NewRestorer(apiClient, logger.GetLogger(), targetPgDataDir, backupID, targetTime)
+	return NewRestorer(apiClient, logger.GetLogger(), targetPgDataDir, backupID, targetTime, pgType)
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

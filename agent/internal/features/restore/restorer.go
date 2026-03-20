@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	walRestoreDir      = "databasus-wal-restore"
-	maxRetryAttempts   = 3
-	retryBaseDelay     = 1 * time.Second
-	recoverySignalFile = "recovery.signal"
-	autoConfFile       = "postgresql.auto.conf"
+	walRestoreDir            = "databasus-wal-restore"
+	maxRetryAttempts         = 3
+	retryBaseDelay           = 1 * time.Second
+	recoverySignalFile       = "recovery.signal"
+	autoConfFile             = "postgresql.auto.conf"
+	dockerContainerPgDataDir = "/var/lib/postgresql/data"
 )
 
 var retryDelayOverride *time.Duration
@@ -33,6 +34,7 @@ type Restorer struct {
 	targetPgDataDir string
 	backupID        string
 	targetTime      string
+	pgType          string
 }
 
 func NewRestorer(
@@ -41,6 +43,7 @@ func NewRestorer(
 	targetPgDataDir string,
 	backupID string,
 	targetTime string,
+	pgType string,
 ) *Restorer {
 	return &Restorer{
 		apiClient,
@@ -48,6 +51,7 @@ func NewRestorer(
 		targetPgDataDir,
 		backupID,
 		targetTime,
+		pgType,
 	}
 }
 
@@ -328,13 +332,10 @@ func (r *Restorer) configurePostgresRecovery(parsedTargetTime *time.Time) error 
 		return fmt.Errorf("create recovery.signal: %w", err)
 	}
 
-	absPgDataDir, err := filepath.Abs(r.targetPgDataDir)
+	walRestoreAbsPath, err := r.resolveWalRestorePath()
 	if err != nil {
-		return fmt.Errorf("resolve absolute path: %w", err)
+		return err
 	}
-
-	absPgDataDir = filepath.ToSlash(absPgDataDir)
-	walRestoreAbsPath := absPgDataDir + "/" + walRestoreDir
 
 	autoConfPath := filepath.Join(r.targetPgDataDir, autoConfFile)
 
@@ -363,10 +364,11 @@ func (r *Restorer) configurePostgresRecovery(parsedTargetTime *time.Time) error 
 
 func (r *Restorer) printCompletionMessage() {
 	absPgDataDir, _ := filepath.Abs(r.targetPgDataDir)
+	isDocker := r.pgType == "docker"
 
-	fmt.Printf(`
-Restore complete. PGDATA directory is ready at %s.
+	fmt.Printf("\nRestore complete. PGDATA directory is ready at %s.\n", absPgDataDir)
 
+	fmt.Print(`
 What happens when you start PostgreSQL:
   1. PostgreSQL detects recovery.signal and enters recovery mode
   2. It replays WAL from the basebackup's consistency point
@@ -375,14 +377,43 @@ What happens when you start PostgreSQL:
   5. recovery_end_command automatically removes databasus-wal-restore/
   6. PostgreSQL promotes to primary and removes recovery.signal
   7. Normal operations resume
+`)
 
+	if isDocker {
+		fmt.Printf(`
+Start PostgreSQL by launching a container with the restored data mounted:
+  docker run -d -v %s:%s postgres:<VERSION>
+
+Or if you have an existing container:
+  docker start <CONTAINER_NAME>
+
+Ensure %s is mounted as the container's pgdata volume at %s.
+`, absPgDataDir, dockerContainerPgDataDir, absPgDataDir, dockerContainerPgDataDir)
+	} else {
+		fmt.Printf(`
 Start PostgreSQL:
   pg_ctl -D %s start
 
 Note: If you move the PGDATA directory before starting PostgreSQL,
 update restore_command and recovery_end_command paths in
 postgresql.auto.conf accordingly.
-`, absPgDataDir, absPgDataDir)
+`, absPgDataDir)
+	}
+}
+
+func (r *Restorer) resolveWalRestorePath() (string, error) {
+	if r.pgType == "docker" {
+		return dockerContainerPgDataDir + "/" + walRestoreDir, nil
+	}
+
+	absPgDataDir, err := filepath.Abs(r.targetPgDataDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path: %w", err)
+	}
+
+	absPgDataDir = filepath.ToSlash(absPgDataDir)
+
+	return absPgDataDir + "/" + walRestoreDir, nil
 }
 
 func (r *Restorer) getRetryDelay(attempt int) time.Duration {

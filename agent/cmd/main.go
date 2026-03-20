@@ -145,7 +145,7 @@ func runRestore(args []string) {
 	}
 
 	apiClient := api.NewClient(cfg.DatabasusHost, cfg.Token, log)
-	restorer := restore.NewRestorer(apiClient, log, *pgDataDir, *backupID, *targetTime)
+	restorer := restore.NewRestorer(apiClient, log, *pgDataDir, *backupID, *targetTime, cfg.PgType)
 
 	ctx := context.Background()
 	if err := restorer.Run(ctx); err != nil {

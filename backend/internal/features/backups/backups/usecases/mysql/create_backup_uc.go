@@ -127,6 +127,8 @@ func (uc *CreateMysqlBackupUsecase) buildMysqldumpArgs(my *mysqltypes.MysqlDatab
 
 	if my.IsHttps {
 		args = append(args, "--ssl-mode=REQUIRED")
+	} else {
+		args = append(args, "--ssl-mode=DISABLED")
 	}
 
 	if my.Database != nil && *my.Database != "" {
@@ -327,6 +329,8 @@ port=%d
 
 	if myConfig.IsHttps {
 		content += "ssl-mode=REQUIRED\n"
+	} else {
+		content += "ssl-mode=DISABLED\n"
 	}
 
 	err = os.WriteFile(myCnfFile, []byte(content), 0o600)

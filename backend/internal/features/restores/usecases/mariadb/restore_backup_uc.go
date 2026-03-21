@@ -77,6 +77,8 @@ func (uc *RestoreMariadbBackupUsecase) Execute(
 	if mdb.IsHttps {
 		args = append(args, "--ssl")
 		args = append(args, "--skip-ssl-verify-server-cert")
+	} else {
+		args = append(args, "--skip-ssl")
 	}
 
 	if mdb.Database != nil && *mdb.Database != "" {

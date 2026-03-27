@@ -34,7 +34,7 @@ export const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string) || 'dev'
 export const IS_CLOUD =
   window.__RUNTIME_CONFIG__?.IS_CLOUD === 'true' || import.meta.env.VITE_IS_CLOUD === 'true';
 
-export const CLOUD_PRICE_PER_GB = Number(
+export const CLOUD_PRICE_PER_GB_CENTS = Number(
   window.__RUNTIME_CONFIG__?.CLOUD_PRICE_PER_GB || import.meta.env.VITE_CLOUD_PRICE_PER_GB || '0',
 );
 

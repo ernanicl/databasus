@@ -3,7 +3,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 
-import { CLOUD_PRICE_PER_GB } from '../../../constants';
+import { CLOUD_PRICE_PER_GB_CENTS } from '../../../constants';
 import {
   type Invoice,
   InvoiceStatus,
@@ -179,7 +179,7 @@ export const BillingComponent = ({ database, isCanManageDBs }: Props) => {
       subscription.status === SubscriptionStatus.Canceled);
 
   const isTrial = subscription?.status === SubscriptionStatus.Trial;
-  const monthlyPrice = subscription ? subscription.storageGb * CLOUD_PRICE_PER_GB : 0;
+  const monthlyPrice = subscription ? subscription.storageGb * CLOUD_PRICE_PER_GB_CENTS : 0;
 
   const invoiceColumns: ColumnsType<Invoice> = [
     {
@@ -290,7 +290,7 @@ export const BillingComponent = ({ database, isCanManageDBs }: Props) => {
 
                 {!isTrial && (
                   <span className="text-2xl font-bold dark:text-white">
-                    ${monthlyPrice.toFixed(2)}
+                    ${(monthlyPrice / 100).toFixed(2)}
                     <span className="text-sm font-normal text-gray-500">/mo</span>
                   </span>
                 )}

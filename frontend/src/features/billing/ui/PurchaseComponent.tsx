@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { usePurchaseFlow } from '../hooks/usePurchaseFlow';
 
-import { CLOUD_PRICE_PER_GB } from '../../../constants';
+import { CLOUD_PRICE_PER_GB_CENTS } from '../../../constants';
 import { SubscriptionStatus } from '../../../entity/billing';
 import {
   BACKUPS_COMPRESSION_RATIO,
@@ -43,7 +43,7 @@ export function PurchaseComponent({ databaseId, onSubscriptionChanged, onClose }
   const approximateDbSize = singleBackupSizeGb * BACKUPS_COMPRESSION_RATIO;
   const backupsFit = Math.floor(newStorageGb / singleBackupSizeGb);
   const gfs = distributeGfs(backupsFit);
-  const monthlyPrice = newStorageGb * CLOUD_PRICE_PER_GB;
+  const monthlyPrice = newStorageGb * CLOUD_PRICE_PER_GB_CENTS;
 
   const { subscription } = flow;
 
@@ -61,7 +61,7 @@ export function PurchaseComponent({ databaseId, onSubscriptionChanged, onClose }
   const isUpgrade = isChangeFlow && newStorageGb > subscription.storageGb;
   const isDowngrade = isChangeFlow && newStorageGb < subscription.storageGb;
   const isSameStorage = isChangeFlow && newStorageGb === subscription.storageGb;
-  const currentPrice = subscription ? subscription.storageGb * CLOUD_PRICE_PER_GB : 0;
+  const currentPrice = subscription ? subscription.storageGb * CLOUD_PRICE_PER_GB_CENTS : 0;
 
   const modalTitle = isPurchaseFlow
     ? subscription.status === SubscriptionStatus.Canceled

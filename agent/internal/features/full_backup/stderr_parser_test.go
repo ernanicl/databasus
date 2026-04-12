@@ -47,6 +47,32 @@ pg_basebackup: write-ahead log end point: B/1000000`
 	assert.Equal(t, "000000010000000B00000001", stopSeg)
 }
 
+func Test_ParseBasebackupStderr_WithTimelineGreaterThanOne_UsesRealTimeline(t *testing.T) {
+	stderr := `pg_basebackup: initiating base backup, waiting for checkpoint to complete
+pg_basebackup: checkpoint completed
+pg_basebackup: write-ahead log start point: 1D2/4A000028 on timeline 26
+pg_basebackup: starting background WAL receiver
+pg_basebackup: write-ahead log end point: 1D2/4A000100
+pg_basebackup: base backup completed`
+
+	startSeg, stopSeg, err := ParseBasebackupStderr(stderr)
+
+	require.NoError(t, err)
+	assert.Equal(t, "0000001A000001D20000004A", startSeg)
+	assert.Equal(t, "0000001A000001D20000004A", stopSeg)
+}
+
+func Test_ParseBasebackupStderr_WhenTimelineMissing_FallsBackToOne(t *testing.T) {
+	stderr := `pg_basebackup: write-ahead log start point: 0/2000028
+pg_basebackup: write-ahead log end point: 0/2000100`
+
+	startSeg, stopSeg, err := ParseBasebackupStderr(stderr)
+
+	require.NoError(t, err)
+	assert.Equal(t, "000000010000000000000002", startSeg)
+	assert.Equal(t, "000000010000000000000002", stopSeg)
+}
+
 func Test_ParseBasebackupStderr_WhenStartLSNMissing_ReturnsError(t *testing.T) {
 	stderr := `pg_basebackup: write-ahead log end point: 0/2000100
 pg_basebackup: base backup completed`

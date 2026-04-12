@@ -12,6 +12,7 @@ const defaultWalSegmentSize uint32 = 16 * 1024 * 1024 // 16 MB
 var (
 	startLSNRegex = regexp.MustCompile(`write-ahead log start point: ([0-9A-Fa-f]+/[0-9A-Fa-f]+)`)
 	stopLSNRegex  = regexp.MustCompile(`write-ahead log end point: ([0-9A-Fa-f]+/[0-9A-Fa-f]+)`)
+	timelineRegex = regexp.MustCompile(`on timeline (\d+)`)
 )
 
 func ParseBasebackupStderr(stderr string) (startSegment, stopSegment string, err error) {
@@ -25,17 +26,38 @@ func ParseBasebackupStderr(stderr string) (startSegment, stopSegment string, err
 		return "", "", fmt.Errorf("failed to parse stop WAL location from pg_basebackup stderr")
 	}
 
-	startSegment, err = LSNToSegmentName(startMatch[1], 1, defaultWalSegmentSize)
+	timelineID, err := parseTimeline(stderr)
+	if err != nil {
+		return "", "", err
+	}
+
+	startSegment, err = LSNToSegmentName(startMatch[1], timelineID, defaultWalSegmentSize)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to convert start LSN to segment name: %w", err)
 	}
 
-	stopSegment, err = LSNToSegmentName(stopMatch[1], 1, defaultWalSegmentSize)
+	stopSegment, err = LSNToSegmentName(stopMatch[1], timelineID, defaultWalSegmentSize)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to convert stop LSN to segment name: %w", err)
 	}
 
 	return startSegment, stopSegment, nil
+}
+
+func parseTimeline(stderr string) (uint32, error) {
+	match := timelineRegex.FindStringSubmatch(stderr)
+	if len(match) < 2 {
+		// pg_basebackup always prints "on timeline N" on the start point line; if it's
+		// missing we fall back to 1 to preserve the pre-fix behavior for unusual outputs.
+		return 1, nil
+	}
+
+	timeline, err := strconv.ParseUint(match[1], 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid timeline in pg_basebackup stderr %q: %w", match[1], err)
+	}
+
+	return uint32(timeline), nil
 }
 
 func LSNToSegmentName(lsn string, timelineID, walSegmentSize uint32) (string, error) {
